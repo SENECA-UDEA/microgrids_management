@@ -38,6 +38,6 @@ Go to http://www.pyomo.org for more information.
 
 ::
 
-    python -m TempScen -da "../data/results.csv" -gr 5 -gc 8 -cn "ARX" -s_end "2019-11-05 23:00:00-05:00" -s_start "2019-11-05 00:00:00-05:00" -i_start "2019-10-31 00:00:00-05:00" -sn "gurobi"
+    python -m microgrids_management -wf "../data/results.csv" -gr 5 -gc 8 -cn "ARX" -s_end "2019-11-05 23:00:00-05:00" -s_start "2019-11-05 00:00:00-05:00" -i_start "2019-10-31 00:00:00-05:00" -sn "gurobi"
 
-* You need to install a Quadratic solver such as "Gurobi": www.gurobi.com/ (e.g Gurobi, Cplex, SCJP, etc.)
+* You need to install a linear solver such as "Gurobi": www.gurobi.com/ (e.g Gurobi, Cplex, SCJP, etc.)

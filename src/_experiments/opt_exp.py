@@ -3,7 +3,7 @@ import pandas as pd
 import sys
 
 def make_model(generators_dict=None, forecast_df=None, battery=None, demand=None,
-    down_limit=None, up_limit=None, l_min=None, l_max=None):
+    down_limit=None, up_limit=None, l_min=None, l_max=None, size=None):
     """
     Crea el modelo.
     
@@ -80,15 +80,15 @@ def make_model(generators_dict=None, forecast_df=None, battery=None, demand=None
     def G_rule(model, i, t):
         gen = generators_dict[i]
         if gen.tec == 'S':
-            return model.G[i,t] == gen.G_test * (forecast_df['Rt'][t]/gen.R_test) * model.x[i,t]
+            return model.G[i,t] == size[gen.tec] * gen.G_test * (forecast_df['Rt'][t]/gen.R_test) * model.x[i,t]
         if gen.tec == 'W':
             if forecast_df['Wt'][t] < gen.w_min:
                 return model.G[i,t] == 0
             elif forecast_df['Wt'][t] < gen.w_a:
                 # return model.G[i,t] == 0
-                return model.G[i,t] == ((1/2) * gen.p * gen.s * (forecast_df['Wt'][t]**3) * gen.ef *gen.n* model.x[i,t])/1000
+                return model.G[i,t] == (size[gen.tec] * (1/2) * gen.p * gen.s * (forecast_df['Wt'][t]**3) * gen.ef *gen.n* model.x[i,t])/1000
             elif forecast_df['Wt'][t] <= gen.w_max:
-                return model.G[i,t] == ((1/2) * gen.p * gen.s * (gen.w_a**3) * gen.ef *gen.n* model.x[i,t])/1000
+                return model.G[i,t] == (size[gen.tec] * (1/2) * gen.p * gen.s * (gen.w_a**3) * gen.ef *gen.n* model.x[i,t])/1000
             else:
                 return model.G[i,t] == 0
         if gen.tec == 'H':

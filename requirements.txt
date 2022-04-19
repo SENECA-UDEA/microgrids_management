@@ -1,0 +1,9 @@
+Click==7.0
+matplotlib==3.0.3
+numpy==1.16.2
+pandas==0.24.2
+pyutilib
+pyomo
+scipy==1.2.1
+pyplot
+
