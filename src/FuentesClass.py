@@ -1,3 +1,4 @@
+import numpy as np
 
 class Generator():
 
@@ -13,6 +14,11 @@ class Solar(Generator):
         self.R_test = R_test
         self.tec = tec
         super(Solar, self).__init__(id_gen, va_op)
+    
+    def generation(self, forecast_df):
+        self.g = np.zeros(len(forecast_df))
+        for t in range(len(forecast_df)):
+            self.g[t] = self.G_test * (forecast_df['Rt'][t]/self.R_test)
 
 class Eolica(Generator):
     def __init__(self, id_gen, tec, va_op, ef, n, s, p, w_min, w_a, w_max):
@@ -25,6 +31,18 @@ class Eolica(Generator):
         self.w_max = w_max
         self.tec = tec
         super(Eolica, self).__init__(id_gen, va_op)
+    
+    def generation(self, forecast_df):
+        self.g = np.zeros(len(forecast_df))
+        for t in range(len(forecast_df)):
+            if forecast_df['Wt'][t] < self.w_min:
+                self.g[t] == 0
+            elif forecast_df['Wt'][t] < self.w_a:
+                self.g[t] == ((1/2) * self.p * self.s * (forecast_df['Wt'][t]**3) * self.ef *self.n)/1000
+            elif forecast_df['Wt'][t] <= self.w_max:
+                return self.g[t] == ((1/2) * self.p * self.s * (self.w_a**3) * self.ef *self.n)/1000
+            else:
+                return self.g[t] == 0
 
 class Hidraulica(Generator):
     def __init__(self, id_gen, tec, va_op, ef, ht, p):
