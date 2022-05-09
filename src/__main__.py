@@ -48,7 +48,7 @@ def main_func(weather_forecast, demand_forecast, generation_units, down_limit, u
     input_check(weather_forecast, demand_forecast, generation_units)
 
     forecast_df, demand = GestionMR.read_data(weather_forecast, demand_forecast, sepr=';')
-    generators_dict, battery = GestionMR.create_generators(generation_units)
+    generators_dict, battery = GestionMR.create_generators(generation_units, forecast_df)
 
     model = opt.make_model(generators_dict, forecast_df, battery, demand, down_limit, up_limit, l_min, l_max)
 

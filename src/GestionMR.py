@@ -32,7 +32,7 @@ def read_data(forecast_filepath, demand_filepath, sepr=','):#, filepath_bat):
     
     return forecast_df, demand
 
-def create_generators(param_filepath):
+def create_generators(param_filepath, forecast_df):
     with open(param_filepath) as parameters:
         data = json.load(parameters)
     
@@ -45,8 +45,10 @@ def create_generators(param_filepath):
     for i in generators:
         if i['tec'] == 'S':
             obj_aux = FuentesClass.Solar(*i.values())
+            obj_aux.generation(forecast_df=forecast_df)
         elif i['tec'] == 'W':
             obj_aux = FuentesClass.Eolica(*i.values())
+            obj_aux.generation(forecast_df=forecast_df)
         elif i['tec'] == 'H':
             obj_aux = FuentesClass.Hidraulica(*i.values())
         elif i['tec'] == 'D':
@@ -55,8 +57,9 @@ def create_generators(param_filepath):
             obj_aux = FuentesClass.Fict(*i.values())
         # else:
         #     raise RuntimeError('Generator ({}) with unknow tecnology ({}).'.format(i['id_gen'], i['tec'])
-
+        
         generators_dict[i['id_gen']] = obj_aux
+    
         
     return generators_dict, battery
 
