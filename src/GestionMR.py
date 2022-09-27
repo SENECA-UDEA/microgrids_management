@@ -32,7 +32,7 @@ def read_data(forecast_filepath, demand_filepath, sepr=','):#, filepath_bat):
     
     return forecast_df, demand
 
-def create_generators(param_filepath, forecast_df):
+def create_generators(param_filepath):
     with open(param_filepath) as parameters:
         data = json.load(parameters)
     
@@ -45,10 +45,8 @@ def create_generators(param_filepath, forecast_df):
     for i in generators:
         if i['tec'] == 'S':
             obj_aux = FuentesClass.Solar(*i.values())
-            obj_aux.generation(forecast_df=forecast_df)
         elif i['tec'] == 'W':
             obj_aux = FuentesClass.Eolica(*i.values())
-            obj_aux.generation(forecast_df=forecast_df)
         elif i['tec'] == 'H':
             obj_aux = FuentesClass.Hidraulica(*i.values())
         elif i['tec'] == 'D':
@@ -57,77 +55,108 @@ def create_generators(param_filepath, forecast_df):
             obj_aux = FuentesClass.Fict(*i.values())
         # else:
         #     raise RuntimeError('Generator ({}) with unknow tecnology ({}).'.format(i['id_gen'], i['tec'])
-        
+
         generators_dict[i['id_gen']] = obj_aux
-    
         
     return generators_dict, battery
 
-class Results():
-    def __init__(self, model):
-        #results = {}
-        G_data = {'g_'+i: [0]*len(model.T) for i in model.calI}
-        for (i,t), v in model.G.items():
-            G_data['g_'+i][t] = value(v)
-        
-        self.g = pd.DataFrame(G_data, columns=[*G_data.keys()])
+def create_results(model):
+    #results = {}
+    G_data = {i: [0]*len(model.T) for i in model.calI}
+    for (i,t), v in model.G.items():
+        G_data[i][t] = value(v)
+    
+    G_df = pd.DataFrame(G_data, columns=[*G_data.keys()])
 
-        x_data = {'x_'+i: [0]*len(model.T) for i in model.I}
-        for (i,t), v in model.x.items():
-            x_data['x_'+i][t] = value(v)
-        
-        self.x = pd.DataFrame(x_data, columns=[*x_data.keys()])
+    x_data = {i: [0]*len(model.T) for i in model.I}
+    for (i,t), v in model.x.items():
+        x_data[i][t] = value(v)
+    
+    x_df = pd.DataFrame(x_data, columns=[*x_data.keys()])
 
-        b_data = [0] * len(model.T)
-        
-        for t, v in model.B.items():
-            b_data[t] = value(v)
-        b_data = {'b': b_data}
-        
-        self.b = pd.DataFrame(b_data)
+    b_data = {i: [0]*len(model.T) for i in model.I}
+    for t, v in model.B.items():
+        b_data[t] = value(v)
+    
+    b_df = pd.DataFrame(b_data, columns=[*b_data.keys()])
 
-        eb_data = [0]*len(model.T)
-        for t in model.T:
-            eb_data[t] = value(model.EB[t])
-        
-        self.eb = pd.DataFrame(eb_data)
+    eb_data = [0]*len(model.T)
+    for t in model.T:
+        eb_data[t] = value(model.EB[t])
+    
+    eb_df = pd.DataFrame(eb_data)
 
+    return G_df, x_df, b_df, eb_df
 
-
-    def export_results(self, opt_results, base_file_name):
-        
-        self.term_cond = opt_results.solver.termination_condition
-        
-        dt = self.g.copy()
-        for i in self.x.columns:
-            dt[i] = self.x[i]
-        for i in self.b.columns:
-            dt[i] = self.b[i]
-        
-        new_path = '/results/'+base_file_name
+def export_results(model, location, day, x_df, G_df, b_df, execution_time,
+    down_limit, up_limit, l_max, l_min, term_cond):
+    
+    #current_path = os.getcwd()
+    y = False
+    while not(y):
+        folder_name = location+'_'+day+'_'+str(random.choice(string.ascii_letters))+str(random.randint(0, 10))
+        new_path = '../results/'+folder_name
         if not os.path.exists(new_path):
             os.makedirs(new_path)
-        else:
-            folder_name = base_file_name+'_'+str(random.choice(string.ascii_letters))+str(random.randint(0, 10))
-            new_path = '/results/'+folder_name
-            os.makedirs(new_path)
-                
-        
-        #Creating the .CSV file
-        dt.to_csv(new_path+'/'+base_file_name+'.csv')
-        print('Your output file ({}) is in ({}) folder'.format(base_file_name, new_path))
+            y = True
+    x_df.to_csv(new_path+'/x.csv')
+    G_df.to_csv(new_path+'/G.csv')
+    b_df.to_csv(new_path+'/b.csv')
 
-        sys.exit()
+    with open('../results/results.csv', 'a') as file:
+        writer = csv.writer(file)
+        writer.writerow([folder_name, down_limit, up_limit, l_min, l_max, 
+            execution_time, pyo.value(model.generation_cost), term_cond])
+    
 
-        with open('../results/results.csv', 'a') as file:
-            writer = csv.writer(file)
-            writer.writerow([folder_name, down_limit, up_limit, l_min, l_max, 
-                execution_time, pyo.value(model.generation_cost), term_cond])
-        
-
-        return folder_name
+    return folder_name
 
 def visualize_results(g_df, x_df, d_df, eb_df, label=None, name=None):
+    """
+    ##INICIAL
+    x_df.insert(0, "period", x_df.index)
+    g_df.insert(0, "period", g_df.index)
+    # b_df.insert(0, "period", b_df.index)
+    
+    #
+    sns.set_style("whitegrid")
+    ax = sns.lineplot(data=x_df.drop('period', axis=1))
+    ax.set(xticks=x_df.period)
+    ax.legend(loc='right', bbox_to_anchor=(1.25, 0.5), ncol=1)
+    plt.show()
+    #
+    
+    sns.set_style("whitegrid")
+    ax = sns.lineplot(data=g_df.drop('period', axis=1), dashes=False)
+    ax.set(xticks=g_df.period)
+    ax.legend(loc='right', bbox_to_anchor=(1.25, 0.5), ncol=1)
+    plt.show()
+    
+    #
+    fig = go.Figure()
+    # Create and style traces
+    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Solar1'], name='Solar1',
+                            line=dict(color='firebrick', width=1)))
+    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Wind1'], name='Wind1',
+                            line=dict(color='royalblue', width=1)))
+    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Hydro1'], name='Hydro1',
+                            line=dict(color='green', width=1)))
+    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Diesel1'], name='Diesel1',
+                            line=dict(color='red', width=1)))
+    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Diesel2'], name='Diesel2',
+                            line=dict(color='black', width=1)))
+
+
+    # Edit the layout
+    fig.update_layout(title='Energy dispatch',
+                    xaxis_title='period',
+                    yaxis_title='generation (kw)')
+    
+
+
+    fig.show()
+    
+    """
     data_dem = list(d_df.values())
     
     data_s = g_df['Solar1'].to_numpy()
@@ -179,9 +208,9 @@ if __name__ == "__main__":
     # Just Test conditions
     location = 'ME'
     day = '01'
-    forecast_filepath = '../data/instances/P/P03FORECAST.csv'
+    forecast_filepath = '../data/instances/P/P01FORECAST.csv'
     demand_filepath = '../data/instances/P/P03DEMAND.csv'
-    param_filepath = '../data/parameters_P.json'
+    param_filepath = '../data/instances/P/parameters_P.json'
     
 
     # forecast_filepath = os.path.join('../data/instances', str(location+day+'FORECAST.csv'))
@@ -198,10 +227,10 @@ if __name__ == "__main__":
     model = opt.make_model(generators_dict, forecast_df, battery, demand,
                             down_limit, up_limit, l_min, l_max)
 
-    opt = pyo.SolverFactory('gurobi')
+    optimizer = pyo.SolverFactory('gurobi')
 
     timea = time.time()
-    results = opt.solve(model)
+    results = optimizer.solve(model)
     execution_time = time.time() - timea
 
     term_cond = results.solver.termination_condition
@@ -210,10 +239,7 @@ if __name__ == "__main__":
         raise RuntimeError("Optimization failed.")
     
 
-    # G_df, x_df, b_df, eb_df = create_results(model)
-
-    r = Results(model)
-    r.export_results(results, "Prueba")
+    G_df, x_df, b_df, eb_df = create_results(model)
     """
     folder_name = export_results(model, location, day, x_df, G_df, b_df,
         execution_time, down_limit, up_limit, l_max, l_min, term_cond)
@@ -223,8 +249,8 @@ if __name__ == "__main__":
     #model.EB.pprint()
     #model.temp.pprint()
     """
-    # visualize_results(G_df, x_df, b_df, eb_df)
-    # model.G.pprint()
+    visualize_results(G_df, x_df, demand, eb_df)
+    model.G.pprint()
     
     
     
