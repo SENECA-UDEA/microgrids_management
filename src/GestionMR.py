@@ -112,51 +112,6 @@ def export_results(model, location, day, x_df, G_df, b_df, execution_time,
     return folder_name
 
 def visualize_results(g_df, x_df, d_df, eb_df, label=None, name=None):
-    """
-    ##INICIAL
-    x_df.insert(0, "period", x_df.index)
-    g_df.insert(0, "period", g_df.index)
-    # b_df.insert(0, "period", b_df.index)
-    
-    #
-    sns.set_style("whitegrid")
-    ax = sns.lineplot(data=x_df.drop('period', axis=1))
-    ax.set(xticks=x_df.period)
-    ax.legend(loc='right', bbox_to_anchor=(1.25, 0.5), ncol=1)
-    plt.show()
-    #
-    
-    sns.set_style("whitegrid")
-    ax = sns.lineplot(data=g_df.drop('period', axis=1), dashes=False)
-    ax.set(xticks=g_df.period)
-    ax.legend(loc='right', bbox_to_anchor=(1.25, 0.5), ncol=1)
-    plt.show()
-    
-    #
-    fig = go.Figure()
-    # Create and style traces
-    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Solar1'], name='Solar1',
-                            line=dict(color='firebrick', width=1)))
-    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Wind1'], name='Wind1',
-                            line=dict(color='royalblue', width=1)))
-    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Hydro1'], name='Hydro1',
-                            line=dict(color='green', width=1)))
-    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Diesel1'], name='Diesel1',
-                            line=dict(color='red', width=1)))
-    fig.add_trace(go.Scatter(x=g_df['period'], y=g_df['Diesel2'], name='Diesel2',
-                            line=dict(color='black', width=1)))
-
-
-    # Edit the layout
-    fig.update_layout(title='Energy dispatch',
-                    xaxis_title='period',
-                    yaxis_title='generation (kw)')
-    
-
-
-    fig.show()
-    
-    """
     data_dem = list(d_df.values())
     
     data_s = g_df['Solar1'].to_numpy()
@@ -224,33 +179,33 @@ if __name__ == "__main__":
 
     
     
-    model = opt.make_model(generators_dict, forecast_df, battery, demand,
-                            down_limit, up_limit, l_min, l_max)
+    # model = opt.make_model(generators_dict, forecast_df, battery, demand,
+    #                         down_limit, up_limit, l_min, l_max)
 
-    optimizer = pyo.SolverFactory('gurobi')
+    # optimizer = pyo.SolverFactory('gurobi')
 
-    timea = time.time()
-    results = optimizer.solve(model)
-    execution_time = time.time() - timea
+    # timea = time.time()
+    # results = optimizer.solve(model)
+    # execution_time = time.time() - timea
 
-    term_cond = results.solver.termination_condition
-    if term_cond != pyo.TerminationCondition.optimal:
-        print ("Termination condition={}".format(term_cond))
-        raise RuntimeError("Optimization failed.")
+    # term_cond = results.solver.termination_condition
+    # if term_cond != pyo.TerminationCondition.optimal:
+    #     print ("Termination condition={}".format(term_cond))
+    #     raise RuntimeError("Optimization failed.")
     
 
-    G_df, x_df, b_df, eb_df = create_results(model)
-    """
-    folder_name = export_results(model, location, day, x_df, G_df, b_df,
-        execution_time, down_limit, up_limit, l_max, l_min, term_cond)
+    # G_df, x_df, b_df, eb_df = create_results(model)
+    # """
+    # folder_name = export_results(model, location, day, x_df, G_df, b_df,
+    #     execution_time, down_limit, up_limit, l_max, l_min, term_cond)
     
-    print("Resultados en la carpeta: "+folder_name)
-    #model.EL.pprint()
-    #model.EB.pprint()
-    #model.temp.pprint()
-    """
-    visualize_results(G_df, x_df, demand, eb_df)
-    model.G.pprint()
+    # print("Resultados en la carpeta: "+folder_name)
+    # #model.EL.pprint()
+    # #model.EB.pprint()
+    # #model.temp.pprint()
+    # """
+    # visualize_results(G_df, x_df, demand, eb_df)
+    # model.G.pprint()
     
     
     

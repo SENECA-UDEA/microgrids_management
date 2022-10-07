@@ -1,6 +1,8 @@
 import pyomo.environ as pyo
 import pandas as pd
 import sys
+import itertools
+from FuentesClass import Bateria
 
 def make_model(generators_dict=None, forecast_df=None, battery=None, demand=None,
     down_limit=None, up_limit=None, l_min=None, l_max=None):
@@ -227,19 +229,117 @@ def make_model(generators_dict=None, forecast_df=None, battery=None, demand=None
 
     return model
 
+def stochastic_model(generators_dict, battery, D, S, W, P, T, weight):
+    model = pyo.ConcreteModel(name="Stochastic Microgrid Management")
+    
+    #Microgrid components
+    model.T = pyo.Set(initialize=[i for i in range(T)])
+    model.I = pyo.Set(initialize=[i for i in generators_dict.keys()])
+    model.bat = pyo.Set(initialize=[battery.id_bat])
+    model.calI = model.I | model.bat
+    
+    #Affine aithmetic sets
+    model.zero = pyo.Set(initialize=[0])
+    model.Pd = pyo.Set(initialize=list(itertools.product(['D'],range(1,P['D'])))) #Demand noise symbols set
+    model.Ps = pyo.Set(initialize=list(itertools.product(['S'],range(1,P['S'])))) #Solar generation noise symbols set
+    model.Pw = pyo.Set(initialize=list(itertools.product(['W'],range(1,P['W'])))) #Wind generation noise symbols set
+    
+    model.calPd = model.zero | model.Pd
+    model.calPs = model.zero | model.Ps
+    model.calPw = model.zero | model.Pw
+    
+    model.H = model.Pd | model.Ps | model.Pw #(1, ..., pd+ps,pw)
+    model.calH = model.zero | model.H # (0, ..., pd+ps+pw)
+    
+    
+    #Params
+    model.w = pyo.Param(initialize=weight) #Multi-objective weight for mean case
+    model.D_0 = pyo.Param(model.T, initialize=D['mean'])
+    model.D = pyo.Param(model.H, model.T, initialize=D['dev'], default=0)
+    model.S_0 = pyo.Param(model.T, initialize=S['mean'])
+    model.S = pyo.Param(model.H, model.T, initialize=S['dev'], default=0)
+    model.W_0 = pyo.Param(model.T, initialize=W['mean'])
+    model.W = pyo.Param(model.H, model.T, initialize=W['dev'], default=0)
+    model.bat_cap = 100
+    
+    """
+    Variables
+    """
+    model.g = pyo.Var(model.calI, model.calH, model.T, within=pyo.Reals) #Diesel generation
+    # model.g_s = pyo.Var(model.T, model.calH, within=pyo.Reals)
+    # model.g_w = pyo.Var(model.T, model.calH, within=pyo.Reals)
+    model.b = pyo.Var(model.calH, model.T, within=pyo.Reals)
+    model.eb = pyo.Var(model.calH, model.T, within=pyo.Reals)
+    model.y = pyo.Var(model.T, model.calH, within=pyo.Reals)
+    
+    """
+    Constraints  
+    """
+    def PBC_0_rule(model, t):
+        # Mean value
+        return sum(model.g[i, 0, t] for i in model.calI) + model.S_0[t] + model.W_0[t] == model.D_0[t] + model.eb[0, t]            
+    model.PBC_0 = pyo.Constraint(model.T, rule=PBC_0_rule)
+    
+    def PBC_rule(model, f, h, t):
+        # Deviations
+        return sum(model.g[i, f, h, t] for i in model.calI) + model.S[f, h, t] + model.W[f, h, t] == model.D[f, h, t] + model.eb[f, h, t] 
+    model.PBC = pyo.Constraint(model.H, model.T, rule=PBC_rule)
+    
+    def Bconstraint_rule(model, t):
+        # Battery max cap
+        return model.b[0, t] + sum(abs(model.b[h, t]) for h in model.H) <= model.bat_cap
+    model.Bconstraint = pyo.Constraint(model.T, rule=Bconstraint_rule)
+    
+    def maxDescRate_rule(model, t):
+        # Max discharge rate of the battery system
+        return model.g[battery.id_bat, 0, t] + sum(abs(model.g[battery.id_bat, h, t]) for h in model.H) <= battery.mdr
+    model.maxDescRate = pyo.Constraint(model.T, rule=maxDescRate_rule)
+
+    def maxChaRate_rule(model, t):
+        # Max charge rate of the battery system
+        return model.eb[0, t] + sum(abs(model.eb[h, t]) for h in model.H) <= battery.mdr
+    model.maxChaRate = pyo.Constraint(model.T, rule=maxChaRate_rule)
+    
+    def Bstate_0_rule(model, t):
+        if t == 0:
+            expr = battery.eb_zero * (1 - battery.o)
+            expr += (model.eb[0, t]*battery.ef)
+            expr -= (model.g[battery.id_bat,0,t]/battery.ef_inv)
+            return model.b[0, t+1] == expr
+        elif t == T-1:
+            return pyo.Constraint.Skip
+        else:
+            expr = model.b[0, t] * (1 - battery.o)
+            expr += (model.eb[0, t]*battery.ef)
+            expr -= (model.g[battery.id_bat,0,t]/battery.ef_inv)
+            return model.b[0, t+1] == expr
+    model.Bstate_0 = pyo.Constraint(model.T, rule=Bstate_0_rule)
+    
+    def Bstate_rule(model, t):
+        if t == 0:
+            expr = sum(abs((battery.eb_zero * (1 - battery.o)) + (model.eb[0, t]*battery.ef) - 
+                           (model.g[battery.id_bat,0,t]/battery.ef_inv)) for h in model.H)
+            return sum(model.b[h, t+1] for h in model.H) == expr
+        elif t == T-1:
+            return pyo.Constraint.Skip
+        else:
+            expr = sum(abs((model.b[h, t] * (1 - battery.o)) + (model.eb[0, t]*battery.ef) - 
+                           (model.g[battery.id_bat,0,t]/battery.ef_inv)) for h in model.H)
+            return model.b[0, t+1] == expr
+    model.Bstate = pyo.Constraint(model.T, rule=Bstate_rule)
+    
+    
+    
+    
+    return model
+
 if __name__ == "__main__":
-    filepath = 'parametros.csv'
-    parametros = pd.read_csv(filepath, sep=',', header=None)#.sort_index(ascending=False)
-
-    for i in parametros:
-        print(parametros[i])
-
-    # with open(filepath, 'r') as thecsv:
-    #     for row in thecsv:
-    #         print(row)
-
-
-    I = [1, 3, 2]
-    times = 24
-    # model = make_model(I=I, times=times)
-    # model.pprint()
+    D = {'mean':[3, 4], 'dev':{(('D', 1), 0): 0.12, (('D', 1), 1): 0.3}}
+    S = {'mean':[1, 2], 'dev':{(('S', 1), 0): 0.13, (('S', 1), 1): 0.1}}
+    W = {'mean':[1, 1.3], 'dev':{(('W', 1), 0): 0.14, (('W', 1), 1): 0.5}}
+    weight = 0.9 #Multi-objective weight for mean case
+    generators_dict = {'Diesel':40, 'Fict':300}
+    battery = Bateria(id_bat='Battery', ef=0.95, o=0.05, ef_inv=0.95, eb_zero=200, zb=500, epsilon=0.05, M=100, mcr=300, mdr=300)
+    P = {'D': 2, 'S': 2, 'W': 2} # Debe automatizarse al leer los datos
+    T = 2 # Debe automatizarse al leer los datos
+    model = stochastic_model(generators_dict, battery, D, S, W, P, T, weight)
