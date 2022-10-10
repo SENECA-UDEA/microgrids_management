@@ -2,7 +2,8 @@ import pyomo.environ as pyo
 import pandas as pd
 import sys
 import itertools
-from FuentesClass import Bateria
+from FuentesClass import Bateria, Diesel, Fict
+
 
 def make_model(generators_dict=None, forecast_df=None, battery=None, demand=None,
     down_limit=None, up_limit=None, l_min=None, l_max=None):
@@ -252,6 +253,11 @@ def stochastic_model(generators_dict, battery, D, S, W, P, T, weight):
     model.calH = model.zero | model.H # (0, ..., pd+ps+pw)
     
     
+    va_op_dict = {}
+    for i in model.I:
+        va_op_dict[i] = generators_dict[i].va_op
+    
+    
     #Params
     model.w = pyo.Param(initialize=weight) #Multi-objective weight for mean case
     model.D_0 = pyo.Param(model.T, initialize=D['mean'])
@@ -261,6 +267,7 @@ def stochastic_model(generators_dict, battery, D, S, W, P, T, weight):
     model.W_0 = pyo.Param(model.T, initialize=W['mean'])
     model.W = pyo.Param(model.H, model.T, initialize=W['dev'], default=0)
     model.bat_cap = 100
+    model.va_op = pyo.Param(model.I, initialize = va_op_dict)
     
     """
     Variables
@@ -328,8 +335,11 @@ def stochastic_model(generators_dict, battery, D, S, W, P, T, weight):
             return model.b[0, t+1] == expr
     model.Bstate = pyo.Constraint(model.T, rule=Bstate_rule)
     
-    
-    
+    def obj_rule(model):
+        obj = model.w * sum(sum(generators_dict[i].va_op * model.g[i, 0, t] for i in model.I) for t in model.T)
+        obj += (1-model.w) * sum( abs(sum(sum(model.va_op[i] * model.g[i, h, t] for i in model.I) for t in model.T)) for h in model.H)
+        return obj
+    model.obj = pyo.Objective(rule=obj_rule)
     
     return model
 
@@ -338,7 +348,9 @@ if __name__ == "__main__":
     S = {'mean':[1, 2], 'dev':{(('S', 1), 0): 0.13, (('S', 1), 1): 0.1}}
     W = {'mean':[1, 1.3], 'dev':{(('W', 1), 0): 0.14, (('W', 1), 1): 0.5}}
     weight = 0.9 #Multi-objective weight for mean case
-    generators_dict = {'Diesel':40, 'Fict':300}
+    Diesel1 = Diesel(id_gen = 'Diesel1', tec='D', va_op =50, ef=0.25, g_min=2, g_max=2.5)
+    Fict1 = Fict(id_gen='Fict1', tec='NA', va_op=300)
+    generators_dict = {'Diesel1':Diesel1, 'Fict1':Fict1}
     battery = Bateria(id_bat='Battery', ef=0.95, o=0.05, ef_inv=0.95, eb_zero=200, zb=500, epsilon=0.05, M=100, mcr=300, mdr=300)
     P = {'D': 2, 'S': 2, 'W': 2} # Debe automatizarse al leer los datos
     T = 2 # Debe automatizarse al leer los datos
