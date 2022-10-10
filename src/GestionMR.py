@@ -178,7 +178,8 @@ if __name__ == "__main__":
     down_limit, up_limit, l_min, l_max = 0.2, 0.85, 4, 4
 
     
-    
+    model = opt.Deterministic(generators_dict, forecast_df, battery, demand, down_limit, up_limit, l_min, l_max)
+    results = model.solve('gurobi')
     # model = opt.make_model(generators_dict, forecast_df, battery, demand,
     #                         down_limit, up_limit, l_min, l_max)
 
