@@ -5,6 +5,9 @@ import sys
 import itertools
 from FuentesClass import Bateria, Diesel, Fict
 import time
+import csv
+import json
+import FuentesClass as FuentesClass
 
 class _MG_model():
     """
@@ -36,32 +39,93 @@ class _MG_model():
 
 
 class Deterministic(_MG_model):
-    def __init__(self, generators_dict, forecast_df, battery, demand,
-        down_limit, up_limit, l_min, l_max, model_name='Deterministic'):
+    def __init__(self, forecast_filepath, demand_filepath, param_filepath,
+        down_limit=0.2, up_limit=0.95, l_min=4, l_max=4, model_name='Deterministic'):
         """
         A class to create Microgrid Management model using a Deterministic approach.
         
         Args:
-            generators_dict (dict) generators dict of generator units.
-            forecast_df (DataFrame) forecast DataFrame of weather variables.
-            battery (Battery) Battery object.
-            demand (DataFrame) Electricity demand DataFrame.
-            down_limit (float) minimun percentage of battery level to enter into deep-discharge.
-            up_limit (float) maximun percentage of battery level to enter into  overcharge.
-            l_min (int) maximin number of deep-discharge periods allowed into the optimization horizon.
-            l_max (int) maximin number of overcharge periods allowed into the optimization horizon.
+            forecast_filepath (str) weather forecast .csv path.
+            demand_filepath (str) demand forecast .csv path.
+            param_filepath (str) generators and battery .json path.
+            down_limit (float) minimun percentage of battery level to enter into deep-discharge. default: 0.2
+            up_limit (float) maximun percentage of battery level to enter into  overcharge. default: 0.95
+            l_min (int) maximin number of deep-discharge periods allowed into the optimization horizon. default: 4
+            l_max (int) maximin number of overcharge periods allowed into the optimization horizon. default: 4
             
         Attributes:
-            model_name
+            model (Pyomo Concrete Model)
         """
-        self.model = self.make_model(generators_dict, forecast_df, battery, demand,
+
+        forecast_df, demand = self._read_data(forecast_filepath, demand_filepath, sepr=';')
+        generators_dict, battery = self._create_generators(param_filepath)
+        self.model = self._make_model(generators_dict, forecast_df, battery, demand,
                                         down_limit, up_limit, l_min, l_max)
         super().__init__(model_name)
 
     def solve(self, solver='cbc'):
         return self._solve_model(solver)
     
-    def make_model(self, generators_dict=None, forecast_df=None, battery=None, demand=None,
+    def _read_data(forecast_filepath, demand_filepath, sepr=','):
+        """
+        A method to read weather and demand forecast.
+        
+        Args:
+            forecast_filepath (str) weather forecast .csv path.
+            demand_filepath (str) demand forecast .csv path.            
+        Return:
+            forecast_df (DataFrame) Weather forecast DataFrame.
+            demand (DataFrame) Demand forecast DataFrame.
+        """
+        #Identify delimiter
+        with open(forecast_filepath, newline='') as forecast:
+            dialect = csv.Sniffer().sniff(forecast.read(1024))
+        forecast_df = pd.read_csv(forecast_filepath, sep=dialect.delimiter, header=0, index_col='t')
+
+        with open(demand_filepath, newline='') as forecast:
+            dialect = csv.Sniffer().sniff(forecast.read(1024))
+        demand = pd.read_csv(demand_filepath, squeeze=True, sep=dialect.delimiter, header=0)['demand'].to_dict()
+        
+        return forecast_df, demand
+
+    def _create_generators(param_filepath):
+        """
+        A method to create Generators and Battery objects.
+        
+        Args:
+            param_filepath (str) generators and battery .json path.          
+        Return:
+            generators_dict (dict) Dictionary with Generators objects.
+            battery (Bateria) Bateria object.
+        """
+        with open(param_filepath) as parameters:
+            data = json.load(parameters)
+        
+        generators = data['generators']
+        battery = data['battery']
+
+        battery = FuentesClass.Bateria(*battery.values())
+
+        generators_dict = {}
+        for i in generators:
+            if i['tec'] == 'S':
+                obj_aux = FuentesClass.Solar(*i.values())
+            elif i['tec'] == 'W':
+                obj_aux = FuentesClass.Eolica(*i.values())
+            elif i['tec'] == 'H':
+                obj_aux = FuentesClass.Hidraulica(*i.values())
+            elif i['tec'] == 'D':
+                obj_aux = FuentesClass.Diesel(*i.values())
+            elif i['tec'] == 'NA':
+                obj_aux = FuentesClass.Fict(*i.values())
+            # else:
+            #     raise RuntimeError('Generator ({}) with unknow tecnology ({}).'.format(i['id_gen'], i['tec'])
+
+            generators_dict[i['id_gen']] = obj_aux
+            
+        return generators_dict, battery
+
+    def _make_model(self, generators_dict=None, forecast_df=None, battery=None, demand=None,
         down_limit=None, up_limit=None, l_min=None, l_max=None):
         """
         Crea el modelo.
@@ -287,16 +351,16 @@ class Deterministic(_MG_model):
         return model
 
 class AAED(_MG_model):
-    def __init__(self, generators_dict, battery, D, S, W, P, T, weight, model_name='Affine Arithmetic'):
+    def __init__(self, generators_dict, battery, demand_filepath, solar_filepath, wind_filepath, P, T, weight, model_name='Affine Arithmetic'):
+        #def __init__(self, param_filepath, D, S, W, P, T, weight, model_name='Affine Arithmetic'):
         """
         A class to create Microgrid Management model using Affine Arithmetic Economic Dispatch approach.
         
         Args:
-            generators_dict (dict) generators dict of generator units.
-            battery (Battery) Battery object.
-            D (DataFrame) Demand forecast data and deviations.
-            S (DataFrame) Solar generation forecast data and deviations.
-            W (DataFrame) Wind generation forecast data and deviations.
+            param_filepath (str) generators and battery .json path.
+            demand_filepath (str) Demand forecast data and deviations .csv filepath.
+            solar_filepath (str) Solar generation forecast data and deviations .csv filepath.
+            wind_filepath (str) Wind generation forecast data and deviations .csv filepath.
             P (int) Number of noise symbols for Demand, Solar and Wind generation.
             T (int) Number of time periods for the optimization process.
             weight (float) Weight for mean case objective function.
@@ -304,18 +368,143 @@ class AAED(_MG_model):
         Attributes:
             model_name
         """
-        self.model = self.make_model(generators_dict, battery, D, S, W, P, T, weight)
+
+
+        # generators_dict, battery = self._create_generators(param_filepath)
+        D, S, W = self._read_data(demand_filepath, solar_filepath, wind_filepath)
+        self.model = self._make_model(generators_dict, battery, D, S, W, P, T, weight)
         super().__init__(model_name)
+    
+    def _read_data(self, demand_filepath, solar_filepath, wind_filepath):
+        D = pd.read_csv(demand_filepath)
+        S = pd.read_csv(solar_filepath)
+        W = pd.read_csv(wind_filepath)
+
+        d = {}
+        s = {}
+        w = {}
+
+        d['mean'] = D['mean']
+        s['mean'] = S['mean']
+        w['mean'] = W['mean']
+
+        D.drop('mean', inplace=True, axis=1)
+        S.drop('mean', inplace=True, axis=1)
+        W.drop('mean', inplace=True, axis=1)
+        
+        aux_d = {}
+        aux_s = {}
+        aux_w = {}
+        
+        for i in range(1, len(D.columns)+1):
+            for t in range(len(D)):
+                aux_d[('D', i), t] = D[str(i)][t]
+        d['dev'] = aux_d
+
+        for i in range(1, len(S.columns)+1):
+            for t in range(len(S)):
+                aux_s[('S', i), t] = S[str(i)][t]
+        s['dev'] = aux_s
+
+        for i in range(1, len(W.columns)+1):
+            for t in range(len(W)):
+                aux_w[('W', i), t] = W[str(i)][t]
+        w['dev'] = aux_w
+
+        return d, s, w
+    
+    def _create_generators(param_filepath):
+        """
+        A method to create Generators and Battery objects.
+        
+        Args:
+            param_filepath (str) generators and battery .json path.          
+        Return:
+            generators_dict (dict) Dictionary with Generators objects.
+            battery (Bateria) Bateria object.
+        """
+        with open(param_filepath) as parameters:
+            data = json.load(parameters)
+        
+        generators = data['generators']
+        battery = data['battery']
+
+        battery = FuentesClass.Bateria(*battery.values())
+
+        generators_dict = {}
+        for i in generators:
+
+            if i['tec'] == 'D':
+                obj_aux = FuentesClass.Diesel(*i.values())
+            elif i['tec'] == 'NA':
+                obj_aux = FuentesClass.Fict(*i.values())
+            else:
+                raise RuntimeError('Generator ({}) with unavailable tecnology ({}).'.format(i['id_gen'], i['tec']))
+
+            generators_dict[i['id_gen']] = obj_aux
+            
+        return generators_dict, battery
     
     def solve(self, solver='cbc'):
         results = self._solve_model(solver)
         return results
+    
+    def _epsilons(self, actuals):
+        epsilon = {}
 
-    def make_model(self, generators_dict, battery, D, S, W, P, T, weight):
-        model = pyo.ConcreteModel(name="Stochastic Microgrid Management")
+        for f, h in self.model.H:
+            for t in model.T:
+                if f == 'D':
+                    aux = (actuals[f, t]-self.model.D_0[t])/ self.model.D[f, h, t]
+                    if aux < -1:
+                        epsilon[f, h, t] = -1
+                    elif aux > 1:
+                        epsilon[f, h, t] = 1
+                    else:
+                        epsilon[f, h, t] = aux
+                    
+                elif f == 'S':
+                    aux = (actuals[f, t]-self.model.S_0[t])/ self.model.S[f, h, t]
+                    if aux < -1:
+                        epsilon[f, h, t] = -1
+                    elif aux > 1:
+                        epsilon[f, h, t] = 1
+                    else:
+                        epsilon[f, h, t] = aux
+                elif f == 'W':
+                    aux = (actuals[f, t]-self.model.W_0[t])/ self.model.W[f, h, t]
+                    if aux < -1:
+                        epsilon[f, h, t] = -1
+                    elif aux > 1:
+                        epsilon[f, h, t] = 1
+                    else:
+                        epsilon[f, h, t] = aux
+        return epsilon
+
+    def dispatch(self, actuals):
         
+        epsilon = self._epsilons(actuals)
+
+        g = {}
+        for i in self.model.CalI:
+            for t in self.model.T:
+                g[i, t] = self.model.g[i, 0, t] + sum(self.model.g[i, f, h, t]*epsilon[f, h, t] for f, h in self.model.H)
+
+        b = {}
+        for t in self.model.T:
+            b[t] = self.model.b[0, t] + sum(self.model.b[f, h, t]*epsilon[f, h, t] for f, h in self.model.H)
+        
+        eb = {}
+        for t in self.model.T:
+            eb[t] = self.model.eb[0, t] + sum(self.model.eb[f, h, t]*epsilon[f, h, t] for f, h in self.model.H)
+        
+        return g, b, eb
+
+    def _make_model(self, generators_dict, battery, D, S, W, P, T, weight):
+        model = pyo.ConcreteModel(name="Stochastic Microgrid Management")
+
         #Microgrid components
-        model.T = pyo.Set(initialize=[i for i in range(T)])
+        model.T = pyo.Set(initialize=[i for i in range(len(D['mean']))])
         model.I = pyo.Set(initialize=[i for i in generators_dict.keys()])
         model.bat = pyo.Set(initialize=[battery.id_bat])
         model.calI = model.I | model.bat
@@ -421,6 +610,7 @@ class AAED(_MG_model):
             obj += (1-model.w) * sum( abs(sum(sum(model.va_op[i] * model.g[i, h, t] for i in model.I) for t in model.T)) for h in model.H)
             return obj
         model.obj = pyo.Objective(rule=obj_rule)
+
         
         return model
     
@@ -428,6 +618,9 @@ class AAED(_MG_model):
 
 
 if __name__ == "__main__":
+    demand_filepath = '../data/stch/holiday/demand.csv'
+    solar_filepath = '../data/stch/holiday/solar.csv'
+    wind_filepath = '../data/stch/holiday/wind.csv'
     D = {'mean':[3, 4], 'dev':{(('D', 1), 0): 0.12, (('D', 1), 1): 0.3}}
     S = {'mean':[1, 2], 'dev':{(('S', 1), 0): 0.13, (('S', 1), 1): 0.1}}
     W = {'mean':[1, 1.3], 'dev':{(('W', 1), 0): 0.14, (('W', 1), 1): 0.5}}
@@ -437,5 +630,5 @@ if __name__ == "__main__":
     generators_dict = {'Diesel1':Diesel1, 'Fict1':Fict1}
     battery = Bateria(id_bat='Battery', ef=0.95, o=0.05, ef_inv=0.95, eb_zero=200, zb=500, epsilon=0.05, M=100, mcr=300, mdr=300)
     P = {'D': 2, 'S': 2, 'W': 2} # Debe automatizarse al leer los datos
-    T = 2 # Debe automatizarse al leer los datos
-    model = AAED(generators_dict, battery, D, S, W, P, T, weight)
+    T = 24 # Debe automatizarse al leer los datos
+    model = AAED(generators_dict, battery, demand_filepath, solar_filepath, wind_filepath, P, T, weight)
