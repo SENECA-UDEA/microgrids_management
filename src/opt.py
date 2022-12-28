@@ -2,6 +2,8 @@ from mimetypes import init
 import pyomo.environ as pyo
 import pandas as pd
 import sys
+from pyomo.util.infeasible import log_infeasible_constraints
+import logging
 import itertools
 from FuentesClass import Bateria, Diesel, Fict
 import time
@@ -26,11 +28,14 @@ class _MG_model():
     def _solve_model(self, solver):
         optimizer = pyo.SolverFactory(solver)
         timea = time.time()
-        results = optimizer.solve(self.model)
+        results = optimizer.solve(self.model, tee=False)
         execution_time = time.time() - timea
+
+        print(log_infeasible_constraints(self.model))
+        #logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.INFO)
         term_cond = results.solver.termination_condition
         if term_cond != pyo.TerminationCondition.optimal:
-            print ("Termination condition={}".format(term_cond))
+            print ("Termination condition = {}".format(term_cond))
             raise RuntimeError("Optimization failed.")
         else:
             print("Your model has been successfully solved in {} seconds.".format(execution_time))
@@ -351,7 +356,7 @@ class Deterministic(_MG_model):
         return model
 
 class AAED(_MG_model):
-    def __init__(self, generators_dict, battery, demand_filepath, solar_filepath, wind_filepath, P, T, weight, model_name='Affine Arithmetic'):
+    def __init__(self, param_filepath, demand_filepath, solar_filepath, wind_filepath, P, T, weight, model_name='Affine Arithmetic'):
         #def __init__(self, param_filepath, D, S, W, P, T, weight, model_name='Affine Arithmetic'):
         """
         A class to create Microgrid Management model using Affine Arithmetic Economic Dispatch approach.
@@ -372,6 +377,7 @@ class AAED(_MG_model):
 
         # generators_dict, battery = self._create_generators(param_filepath)
         D, S, W = self._read_data(demand_filepath, solar_filepath, wind_filepath)
+        generators_dict, battery = self._create_generators(param_filepath)
         self.model = self._make_model(generators_dict, battery, D, S, W, P, T, weight)
         super().__init__(model_name)
     
@@ -413,7 +419,7 @@ class AAED(_MG_model):
 
         return d, s, w
     
-    def _create_generators(param_filepath):
+    def _create_generators(self, param_filepath):
         """
         A method to create Generators and Battery objects.
         
@@ -547,35 +553,73 @@ class AAED(_MG_model):
         # model.g_w = pyo.Var(model.T, model.calH, within=pyo.Reals)
         model.b = pyo.Var(model.calH, model.T, within=pyo.Reals)
         model.eb = pyo.Var(model.calH, model.T, within=pyo.Reals)
-        model.y = pyo.Var(model.T, model.calH, within=pyo.Reals)
+        # model.y = pyo.Var(model.T, model.calH, within=pyo.Reals)
+
+        # Variables to linearize
+        model.X_obj = pyo.Var(model.H, within=pyo.NonNegativeReals) # Aux variable to make obj linear
+        model.Y = pyo.Var(model.T, within=pyo.NonNegativeReals)
+        model.Z = pyo.Var(model.T, within=pyo.NonNegativeReals)
         
         """
         Constraints  
         """
         def PBC_0_rule(model, t):
-            # Mean value
-            return sum(model.g[i, 0, t] for i in model.calI) + model.S_0[t] + model.W_0[t] == model.D_0[t] + model.eb[0, t]            
+            # Power Balance Constraint - mean value
+            return sum(model.g[i, 0, t] for i in model.calI) + model.S_0[t] + model.W_0[t] - model.eb[0, t] == model.D_0[t]         
         model.PBC_0 = pyo.Constraint(model.T, rule=PBC_0_rule)
         
         def PBC_rule(model, f, h, t):
-            # Deviations
-            return sum(model.g[i, f, h, t] for i in model.calI) + model.S[f, h, t] + model.W[f, h, t] == model.D[f, h, t] + model.eb[f, h, t] 
+            # Power Balance Constraint - deviations values
+            return sum(model.g[i, f, h, t] for i in model.calI) + model.S[f, h, t] + model.W[f, h, t] - model.eb[f, h, t] == model.D[f, h, t]
         model.PBC = pyo.Constraint(model.H, model.T, rule=PBC_rule)
         
         def Bconstraint_rule(model, t):
-            # Battery max cap
+            # Battery max cap base constraint
             return model.b[0, t] + sum(abs(model.b[h, t]) for h in model.H) <= model.bat_cap
         model.Bconstraint = pyo.Constraint(model.T, rule=Bconstraint_rule)
+        model.Bconstraint.deactivate()
+
+        def Bconstraint1_rule(model, t):
+            # Battery max cap upper constraint
+            return model.b[0, t] + sum(model.b[h, t] for h in model.H) <= model.bat_cap
+        model.Bconstraint1 = pyo.Constraint(model.T, rule=Bconstraint1_rule)
+
+        def Bconstraint2_rule(model, t):
+            # Battery max cap lower constraint
+            return model.b[0, t] - sum(model.b[h, t] for h in model.H) <= model.bat_cap
+        model.Bconstraint2 = pyo.Constraint(model.T, rule=Bconstraint2_rule)
         
         def maxDescRate_rule(model, t):
-            # Max discharge rate of the battery system
+            # Max discharge rate of the battery system base constraint
             return model.g[battery.id_bat, 0, t] + sum(abs(model.g[battery.id_bat, h, t]) for h in model.H) <= battery.mdr
         model.maxDescRate = pyo.Constraint(model.T, rule=maxDescRate_rule)
+        model.maxDescRate.deactivate()
+
+        def maxDescRate1_rule(model, t):
+            # Max discharge rate of the battery system
+            return model.g[battery.id_bat, 0, t] + sum(model.g[battery.id_bat, h, t] for h in model.H) <= battery.mdr
+        model.maxDescRate1 = pyo.Constraint(model.T, rule=maxDescRate1_rule)
+
+        def maxDescRate2_rule(model, t):
+            # Max discharge rate of the battery system
+            return model.g[battery.id_bat, 0, t] - sum(model.g[battery.id_bat, h, t] for h in model.H) <= battery.mdr
+        model.maxDescRate2 = pyo.Constraint(model.T, rule=maxDescRate2_rule)
 
         def maxChaRate_rule(model, t):
-            # Max charge rate of the battery system
+            # Max charge rate of the battery system base constraint
             return model.eb[0, t] + sum(abs(model.eb[h, t]) for h in model.H) <= battery.mdr
         model.maxChaRate = pyo.Constraint(model.T, rule=maxChaRate_rule)
+        model.maxChaRate.deactivate()
+
+        def maxChaRate1_rule(model, t):
+            # Max charge rate of the battery system
+            return model.eb[0, t] + sum(model.eb[h, t] for h in model.H) <= battery.mdr
+        model.maxChaRate1 = pyo.Constraint(model.T, rule=maxChaRate1_rule)
+
+        def maxChaRate2_rule(model, t):
+            # Max charge rate of the battery system
+            return model.eb[0, t] - sum(model.eb[h, t] for h in model.H) <= battery.mdr
+        model.maxChaRate2 = pyo.Constraint(model.T, rule=maxChaRate2_rule)
         
         def Bstate_0_rule(model, t):
             if t == 0:
@@ -594,20 +638,82 @@ class AAED(_MG_model):
         
         def Bstate_rule(model, t):
             if t == 0:
-                expr = sum(abs((battery.eb_zero * (1 - battery.o)) + (model.eb[0, t]*battery.ef) - 
-                            (model.g[battery.id_bat,0,t]/battery.ef_inv)) for h in model.H)
-                return sum(model.b[h, t+1] for h in model.H) == expr
+                expr = sum(abs( (1- battery.o)*model.b[h, t] +
+                                (model.eb[h,t]*battery.ef - (model.g[battery.id_bat, h, t]/battery.ef_inv)) ) for h in model.H)
+                return abs(sum(model.b[h, t+1] for h in model.H)) == expr
             elif t == T-1:
                 return pyo.Constraint.Skip
             else:
-                expr = sum(abs((model.b[h, t] * (1 - battery.o)) + (model.eb[0, t]*battery.ef) - 
-                            (model.g[battery.id_bat,0,t]/battery.ef_inv)) for h in model.H)
-                return model.b[0, t+1] == expr
+                expr = sum(abs((model.b[h, t] * (1 - battery.o)) + 
+                                (model.eb[h,t]*battery.ef - (model.g[battery.id_bat, h, t]/battery.ef_inv)) ) for h in model.H)
+                return sum(abs(model.b[h, t+1]) for h in model.H) == expr
         model.Bstate = pyo.Constraint(model.T, rule=Bstate_rule)
+        model.Bstate.deactivate()
+
+        def Bstate5_rule(model, t):
+            return model.Y[t] - model.Z[t] == 0
+        model.Bstate5 = pyo.Constraint(model.T, rule=Bstate5_rule)
+
+        """
+        Constraints to linearize the model
+        """
+        
+        def l_obj1_rule(model, h1, h2):
+            return sum(sum( model.va_op[i] * model.g[i, h1, h2, t] for i in model.I) for t in model.T) <= model.X_obj[h1, h2]
+        model.l_obj1 = pyo.Constraint(model.H, rule=l_obj1_rule)
+
+        def l_obj2_rule(model, h1, h2):
+            return -1 * sum(sum( model.va_op[i] * model.g[i, h1, h2, t] for i in model.I) for t in model.T) <= model.X_obj[h1, h2]
+        model.l_obj2 = pyo.Constraint(model.H, rule=l_obj2_rule)
+
+        def Bstate1_rule(model, t):
+            if t == T-1:
+                return pyo.Constraint.Skip
+            else:
+                return sum(model.b[h, t+1] for h in model.H) <= model.Y[t]
+        model.Bstate1 = pyo.Constraint(model.T, rule=Bstate1_rule)
+
+        def Bstate2_rule(model, t):
+            if t == T-1:
+                return pyo.Constraint.Skip
+            else:
+                return -1 * sum(model.b[h, t+1] for h in model.H) <= model.Y[t]
+        model.Bstate2 = pyo.Constraint(model.T, rule=Bstate2_rule)
+
+        def Bstate3_rule(model, t):
+            if t == 0:
+                expr = sum((1- battery.o)*model.b[h, t] +
+                                (model.eb[h,t]*battery.ef - (model.g[battery.id_bat, h, t]/battery.ef_inv)) for h in model.H)
+                return expr <= model.Z[t]
+            elif t == T-1:
+                return pyo.Constraint.Skip
+            else:
+                expr = sum((model.b[h, t] * (1 - battery.o)) + 
+                                (model.eb[h,t]*battery.ef - (model.g[battery.id_bat, h, t]/battery.ef_inv)) for h in model.H)
+                return expr <= model.Z[t]
+        model.Bstate3 = pyo.Constraint(model.T, rule=Bstate3_rule)
+
+        def Bstate4_rule(model, t):
+            if t == 0:
+                expr = sum((1- battery.o)*model.b[h, t] +
+                                (model.eb[h,t]*battery.ef - (model.g[battery.id_bat, h, t]/battery.ef_inv)) for h in model.H)
+                return -1 * expr <= model.Z[t]
+            elif t == T-1:
+                return pyo.Constraint.Skip
+            else:
+                expr = sum((model.b[h, t] * (1 - battery.o)) + 
+                                (model.eb[h,t]*battery.ef - (model.g[battery.id_bat, h, t]/battery.ef_inv)) for h in model.H)
+                return -1 * expr <= model.Z[t]
+        model.Bstate4 = pyo.Constraint(model.T, rule=Bstate4_rule)
+
+        
+        """
+        Objective function
+        """
         
         def obj_rule(model):
             obj = model.w * sum(sum(generators_dict[i].va_op * model.g[i, 0, t] for i in model.I) for t in model.T)
-            obj += (1-model.w) * sum( abs(sum(sum(model.va_op[i] * model.g[i, h, t] for i in model.I) for t in model.T)) for h in model.H)
+            obj += (1-model.w) * sum( model.X_obj[h] for h in model.H)
             return obj
         model.obj = pyo.Objective(rule=obj_rule)
 
@@ -621,14 +727,18 @@ if __name__ == "__main__":
     demand_filepath = '../data/stch/holiday/demand.csv'
     solar_filepath = '../data/stch/holiday/solar.csv'
     wind_filepath = '../data/stch/holiday/wind.csv'
-    D = {'mean':[3, 4], 'dev':{(('D', 1), 0): 0.12, (('D', 1), 1): 0.3}}
+    param_filepath = '../data/stch/parameters.json'
+    """ D = {'mean':[3, 4], 'dev':{(('D', 1), 0): 0.12, (('D', 1), 1): 0.3}}
     S = {'mean':[1, 2], 'dev':{(('S', 1), 0): 0.13, (('S', 1), 1): 0.1}}
-    W = {'mean':[1, 1.3], 'dev':{(('W', 1), 0): 0.14, (('W', 1), 1): 0.5}}
+    W = {'mean':[1, 1.3], 'dev':{(('W', 1), 0): 0.14, (('W', 1), 1): 0.5}} """
     weight = 0.9 #Multi-objective weight for mean case
-    Diesel1 = Diesel(id_gen = 'Diesel1', tec='D', va_op =50, ef=0.25, g_min=2, g_max=2.5)
+    """ Diesel1 = Diesel(id_gen = 'Diesel1', tec='D', va_op =50, ef=0.25, g_min=2, g_max=2.5)
     Fict1 = Fict(id_gen='Fict1', tec='NA', va_op=300)
     generators_dict = {'Diesel1':Diesel1, 'Fict1':Fict1}
-    battery = Bateria(id_bat='Battery', ef=0.95, o=0.05, ef_inv=0.95, eb_zero=200, zb=500, epsilon=0.05, M=100, mcr=300, mdr=300)
+    battery = Bateria(id_bat='Battery', ef=0.95, o=0.05, ef_inv=0.95, eb_zero=200, zb=500, epsilon=0.05, M=100, mcr=300, mdr=300) """
     P = {'D': 2, 'S': 2, 'W': 2} # Debe automatizarse al leer los datos
     T = 24 # Debe automatizarse al leer los datos
-    model = AAED(generators_dict, battery, demand_filepath, solar_filepath, wind_filepath, P, T, weight)
+    model = AAED(param_filepath, demand_filepath, solar_filepath, wind_filepath, P, T, weight)
+
+    #Solving the model
+    #model.solve(solver='gurobi')
