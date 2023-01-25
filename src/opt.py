@@ -11,6 +11,8 @@ import csv
 import json
 import FuentesClass as FuentesClass
 
+import graph
+
 class _MG_model():
     """
     A class to solve microgrid management model depending wich model is selected by user.
@@ -382,9 +384,9 @@ class AAED(_MG_model):
         super().__init__(model_name)
     
     def _read_data(self, demand_filepath, solar_filepath, wind_filepath):
-        D = pd.read_csv(demand_filepath)
-        S = pd.read_csv(solar_filepath)
-        W = pd.read_csv(wind_filepath)
+        D = pd.read_csv(demand_filepath, sep=';')
+        S = pd.read_csv(solar_filepath, sep=';')
+        W = pd.read_csv(wind_filepath, sep=';')
 
         d = {}
         s = {}
@@ -455,13 +457,25 @@ class AAED(_MG_model):
         results = self._solve_model(solver)
         return results
     
-    def _epsilons(self, actuals):
+    def _epsilons(self, actuals_path):
+        
+        act = pd.read_csv(actuals_path, sep=';')
+
+        b = act.columns
+        c = act.index
+
+        actuals = {}
+
+        for i in b:
+            for j in c:
+                actuals[i,j] = act[i][j]
+
         epsilon = {}
 
         for f, h in self.model.H:
-            for t in model.T:
+            for t in self.model.T:
                 if f == 'D':
-                    aux = (actuals[f, t]-self.model.D_0[t])/ self.model.D[f, h, t]
+                    aux = (actuals[f, t] - pyo.value(self.model.D_0[t]))/ pyo.value(self.model.D[f, h, t])
                     if aux < -1:
                         epsilon[f, h, t] = -1
                     elif aux > 1:
@@ -470,7 +484,7 @@ class AAED(_MG_model):
                         epsilon[f, h, t] = aux
                     
                 elif f == 'S':
-                    aux = (actuals[f, t]-self.model.S_0[t])/ self.model.S[f, h, t]
+                    aux = (actuals[f, t] - pyo.value(self.model.S_0[t]))/ pyo.value(self.model.S[f, h, t])
                     if aux < -1:
                         epsilon[f, h, t] = -1
                     elif aux > 1:
@@ -478,7 +492,7 @@ class AAED(_MG_model):
                     else:
                         epsilon[f, h, t] = aux
                 elif f == 'W':
-                    aux = (actuals[f, t]-self.model.W_0[t])/ self.model.W[f, h, t]
+                    aux = (actuals[f, t] - pyo.value(self.model.W_0[t]))/ pyo.value(self.model.W[f, h, t])
                     if aux < -1:
                         epsilon[f, h, t] = -1
                     elif aux > 1:
@@ -487,22 +501,22 @@ class AAED(_MG_model):
                         epsilon[f, h, t] = aux
         return epsilon
 
-    def dispatch(self, actuals):
+    def dispatch(self, actuals_path):
         
-        epsilon = self._epsilons(actuals)
+        epsilon = self._epsilons(actuals_path)
 
         g = {}
-        for i in self.model.CalI:
+        for i in self.model.calI:
             for t in self.model.T:
-                g[i, t] = self.model.g[i, 0, t] + sum(self.model.g[i, f, h, t]*epsilon[f, h, t] for f, h in self.model.H)
+                g[i, t] = pyo.value(self.model.g[i, 0, t]) + sum(pyo.value(self.model.g[i, f, h, t])*epsilon[f, h, t] for f, h in self.model.H)
 
         b = {}
         for t in self.model.T:
-            b[t] = self.model.b[0, t] + sum(self.model.b[f, h, t]*epsilon[f, h, t] for f, h in self.model.H)
+            b[t] = pyo.value(self.model.b[0, t]) + sum(pyo.value(self.model.b[f, h, t])*epsilon[f, h, t] for f, h in self.model.H)
         
         eb = {}
         for t in self.model.T:
-            eb[t] = self.model.eb[0, t] + sum(self.model.eb[f, h, t]*epsilon[f, h, t] for f, h in self.model.H)
+            eb[t] = pyo.value(self.model.eb[0, t]) + sum(pyo.value(self.model.eb[f, h, t])*epsilon[f, h, t] for f, h in self.model.H)
         
         return g, b, eb
 
@@ -514,6 +528,9 @@ class AAED(_MG_model):
         model.I = pyo.Set(initialize=[i for i in generators_dict.keys()])
         model.bat = pyo.Set(initialize=[battery.id_bat])
         model.calI = model.I | model.bat
+
+        #Set of Diesel generators only
+        model.I_d = pyo.Set(within=model.I, initialize=[i for i in model.I if generators_dict[i].tec=='D'])
         
         #Affine aithmetic sets
         model.zero = pyo.Set(initialize=[0])
@@ -538,39 +555,53 @@ class AAED(_MG_model):
         model.w = pyo.Param(initialize=weight) #Multi-objective weight for mean case
         model.D_0 = pyo.Param(model.T, initialize=D['mean'])
         model.D = pyo.Param(model.H, model.T, initialize=D['dev'], default=0)
-        model.S_0 = pyo.Param(model.T, initialize=S['mean'])
+        model.S_0 = pyo.Param(model.T, initialize=S['mean']*2)
         model.S = pyo.Param(model.H, model.T, initialize=S['dev'], default=0)
-        model.W_0 = pyo.Param(model.T, initialize=W['mean'])
+        model.W_0 = pyo.Param(model.T, initialize=W['mean']*2)
         model.W = pyo.Param(model.H, model.T, initialize=W['dev'], default=0)
-        model.bat_cap = 100
+        model.bat_cap = battery.zb
         model.va_op = pyo.Param(model.I, initialize = va_op_dict)
         
         """
         Variables
         """
         model.g = pyo.Var(model.calI, model.calH, model.T, within=pyo.Reals) #Diesel generation
-        # model.g_s = pyo.Var(model.T, model.calH, within=pyo.Reals)
-        # model.g_w = pyo.Var(model.T, model.calH, within=pyo.Reals)
+        model.waste = pyo.Var(model.T, within=pyo.NonNegativeReals) # Waste of energy
+        
         model.b = pyo.Var(model.calH, model.T, within=pyo.Reals)
         model.eb = pyo.Var(model.calH, model.T, within=pyo.Reals)
-        # model.y = pyo.Var(model.T, model.calH, within=pyo.Reals)
+        
+        model.x = pyo.Var(model.I_d, model.T, within=pyo.Binary)
 
         # Variables to linearize
-        model.X_obj = pyo.Var(model.H, within=pyo.NonNegativeReals) # Aux variable to make obj linear
+        model.g_abs = pyo.Var(model.I, model.H, model.T, within=pyo.NonNegativeReals) # Aux variable to make obj linear
         model.Y = pyo.Var(model.T, within=pyo.NonNegativeReals)
         model.Z = pyo.Var(model.T, within=pyo.NonNegativeReals)
         
         """
         Constraints  
         """
+        def dom_g_rule(model, i, t):
+            return model.g[i, 0, t] >= 0
+        model.dom_g = pyo.Constraint(model.calI, model.T, rule=dom_g_rule)
+
+        def dom_b_rule(model, t):
+            return model.b[0, t] >= 0
+        model.dom_b = pyo.Constraint(model.T, rule=dom_b_rule)
+
+        def dom_eb_rule(model, t):
+            return model.eb[0, t] >= 0
+        model.dom_eb = pyo.Constraint(model.T, rule=dom_eb_rule)
+        
+
         def PBC_0_rule(model, t):
             # Power Balance Constraint - mean value
-            return sum(model.g[i, 0, t] for i in model.calI) + model.S_0[t] + model.W_0[t] - model.eb[0, t] == model.D_0[t]         
+            return sum(model.g[i, 0, t] for i in model.calI) + model.S_0[t] + model.W_0[t] - model.eb[0, t] == model.D_0[t]      
         model.PBC_0 = pyo.Constraint(model.T, rule=PBC_0_rule)
         
         def PBC_rule(model, f, h, t):
             # Power Balance Constraint - deviations values
-            return sum(model.g[i, f, h, t] for i in model.calI) + model.S[f, h, t] + model.W[f, h, t] - model.eb[f, h, t] == model.D[f, h, t]
+            return sum(model.g[i, f, h, t] for i in model.calI) + model.S[f, h, t] + model.W[f, h, t] - model.eb[f, h, t]  == model.D[f, h, t]
         model.PBC = pyo.Constraint(model.H, model.T, rule=PBC_rule)
         
         def Bconstraint_rule(model, t):
@@ -580,12 +611,12 @@ class AAED(_MG_model):
         model.Bconstraint.deactivate()
 
         def Bconstraint1_rule(model, t):
-            # Battery max cap upper constraint
+            # Battery max cap upper constraint - to linearize
             return model.b[0, t] + sum(model.b[h, t] for h in model.H) <= model.bat_cap
         model.Bconstraint1 = pyo.Constraint(model.T, rule=Bconstraint1_rule)
 
         def Bconstraint2_rule(model, t):
-            # Battery max cap lower constraint
+            # Battery max cap lower constraint - to linearize
             return model.b[0, t] - sum(model.b[h, t] for h in model.H) <= model.bat_cap
         model.Bconstraint2 = pyo.Constraint(model.T, rule=Bconstraint2_rule)
         
@@ -654,17 +685,49 @@ class AAED(_MG_model):
             return model.Y[t] - model.Z[t] == 0
         model.Bstate5 = pyo.Constraint(model.T, rule=Bstate5_rule)
 
+        # def maxDescRate1_rule(model, t):
+        #     # Max discharge rate of the battery system
+        #     return model.g[battery.id_bat, 0, t] + sum(model.g[battery.id_bat, h, t] for h in model.H) <= battery.mdr
+        # model.maxDescRate1 = pyo.Constraint(model.T, rule=maxDescRate1_rule)
+
+        # def maxDescRate2_rule(model, t):
+        #     # Max discharge rate of the battery system
+        #     return model.g[battery.id_bat, 0, t] - sum(model.g[battery.id_bat, h, t] for h in model.H) <= battery.mdr
+        # model.maxDescRate2 = pyo.Constraint(model.T, rule=maxDescRate2_rule)
+
+        def maxDiesel_rule(model, i,  t):
+            # Max generation of diesel base constraint - Linearized by defect
+            return model.g[i, 0, t] + sum(model.g[i, h, t] for h in model.H) <= generators_dict[i].g_max * model.x[i, t]
+        model.maxDiesel = pyo.Constraint(model.I_d, model.T, rule=maxDiesel_rule)
+        model.maxDiesel.deactivate()
+
+        def maxDiesel1_rule(model, i,  t):
+            # Max generation of diesel base constraint - Linearized by defect
+            return model.g[i, 0, t] + sum(model.g[i, h, t] for h in model.H) <= generators_dict[i].g_max * model.x[i, t]
+        model.maxDiesel1 = pyo.Constraint(model.I_d, model.T, rule=maxDiesel1_rule)
+
+        def maxDiesel2_rule(model, i,  t):
+            # Max generation of diesel base constraint - Linearized by defect
+            return model.g[i, 0, t] - sum(model.g[i, h, t] for h in model.H) <= generators_dict[i].g_max * model.x[i, t]
+        model.maxDiesel2 = pyo.Constraint(model.I_d, model.T, rule=maxDiesel2_rule)
+
+        def minDiesel_rule(model, i,  t):
+            # Min generation of diesel base constraint - Linearized by defect
+                return model.g[i, 0, t] - sum(model.g[i, h, t] for h in model.H) >= generators_dict[i].g_min * model.x[i, t]
+        model.minDiesel = pyo.Constraint(model.I_d, model.T, rule=minDiesel_rule)
+
+
         """
         Constraints to linearize the model
         """
         
-        def l_obj1_rule(model, h1, h2):
-            return sum(sum( model.va_op[i] * model.g[i, h1, h2, t] for i in model.I) for t in model.T) <= model.X_obj[h1, h2]
-        model.l_obj1 = pyo.Constraint(model.H, rule=l_obj1_rule)
+        def l_obj1_rule(model, i, f, h, t):
+            return model.g[i, f, h, t] <= model.g_abs[i, f, h, t]
+        model.l_obj1 = pyo.Constraint(model.I, model.H, model.T, rule=l_obj1_rule)
 
-        def l_obj2_rule(model, h1, h2):
-            return -1 * sum(sum( model.va_op[i] * model.g[i, h1, h2, t] for i in model.I) for t in model.T) <= model.X_obj[h1, h2]
-        model.l_obj2 = pyo.Constraint(model.H, rule=l_obj2_rule)
+        def l_obj2_rule(model, i, f, h, t):
+            return -1 * model.g[i, f, h, t] <= model.g_abs[i, f, h, t]
+        model.l_obj2 = pyo.Constraint(model.I, model.H, model.T, rule=l_obj2_rule)
 
         def Bstate1_rule(model, t):
             if t == T-1:
@@ -713,20 +776,21 @@ class AAED(_MG_model):
         
         def obj_rule(model):
             obj = model.w * sum(sum(generators_dict[i].va_op * model.g[i, 0, t] for i in model.I) for t in model.T)
-            obj += (1-model.w) * sum( model.X_obj[h] for h in model.H)
+            obj += (1-model.w) * (sum(sum( model.va_op[i] * sum(model.g_abs[i, h, t] for h in model.H) for i in model.I) for t in model.T))
             return obj
         model.obj = pyo.Objective(rule=obj_rule)
 
         
         return model
-    
-    
+
+
+
 
 
 if __name__ == "__main__":
-    demand_filepath = '../data/stch/holiday/demand.csv'
-    solar_filepath = '../data/stch/holiday/solar.csv'
-    wind_filepath = '../data/stch/holiday/wind.csv'
+    demand_filepath = '../data/stch/holiday/base/demand.csv' #With base that means all positive deviations
+    solar_filepath = '../data/stch/holiday/base/solar.csv'
+    wind_filepath = '../data/stch/holiday/base/wind.csv'
     param_filepath = '../data/stch/parameters.json'
     """ D = {'mean':[3, 4], 'dev':{(('D', 1), 0): 0.12, (('D', 1), 1): 0.3}}
     S = {'mean':[1, 2], 'dev':{(('S', 1), 0): 0.13, (('S', 1), 1): 0.1}}
@@ -741,4 +805,32 @@ if __name__ == "__main__":
     model = AAED(param_filepath, demand_filepath, solar_filepath, wind_filepath, P, T, weight)
 
     #Solving the model
-    #model.solve(solver='gurobi')
+    model.solve(solver='gurobi')
+
+    #Running the second part of the tool
+    actuals = '../data/stch/holiday/actuals.csv'
+
+    # g, b, eb = model.dispatch(actuals)
+    
+    # Making graph
+    d, s, w, actuals = graph.read_data(demand_filepath, solar_filepath, wind_filepath, actuals)
+    
+    g = [pyo.value(model.model.g['Diesel1', 0, t]) for t in model.model.T]
+    eb = [pyo.value(model.model.eb[0, t])*-1 for t in model.model.T]
+    b = [pyo.value(model.model.g['Battery1', 0, t]) for t in model.model.T]
+    
+    graph.graph_data(d, s, w, g, eb, b)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

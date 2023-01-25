@@ -1,0 +1,33 @@
+{
+    "generators": [       
+        {
+            "id_gen": "Diesel1",
+            "tec": "D",
+            "va_op": 3000,
+            "ef": 0.24,
+            "g_min":1000,
+            "g_max": 15000
+        },
+        
+        {
+            "id_gen": "Fict",
+            "tec": "NA",
+            "va_op": 50000
+        } 
+
+    ],
+    
+    "battery":{
+        "id_bat": "Battery1",
+        "ef": 0.95,
+        "o": 0.05,
+        "ef_inv": 0.95,
+        "eb_zero": 500,
+        "zb": 15000,
+        "epsilon": 0.1,
+        "M": 24,
+        "mcr": 5000,
+        "mdr": 5000
+    }
+
+}
