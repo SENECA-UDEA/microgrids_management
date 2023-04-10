@@ -21,7 +21,7 @@ def read_data(path):
     df = pd.read_csv(path,sep=",") # Se lee la data
     datad=df.copy()
     
-    x=[datetime.date(2019,1,1)+datetime.timedelta(i) for i in range(0,365)] #Se generan las fechas
+    x=[datetime.date(2019,1,1)+datetime.timedelta(i) for i in range(len(datad))] #Se generan las fechas
     datad['fecha']=pd.to_datetime(x)
     
     datad['dsemana']=datad.fecha.dt.day_name()
