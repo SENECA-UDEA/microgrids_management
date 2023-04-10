@@ -126,7 +126,7 @@ if __name__ == '__main__':
     demand_filepath = '../../data/expr/stch/base_demand.csv' #With base that means all positive deviations
     solar_filepath = '../../data/expr/stch/base_wind.csv'
     wind_filepath = '../../data/expr/stch/base_solar.csv'
-    param_filepath = '../../data/stch/parameters.json'
+    param_filepath = '../../data/expr/parameters.json'
     weight = 0.9 #Multi-objective weight for mean case
     P = {'D': 2, 'S': 2, 'W': 2} # Debe automatizarse al leer los datos
     T = 24 # Debe automatizarse al leer los datos
