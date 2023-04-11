@@ -99,7 +99,15 @@ class Deterministic(_MG_model):
         
         # eb_df = pd.DataFrame(eb_data)
 
-        return G_df, x_df, b_data, eb_data
+        s = {}
+        for t in self.model.T:
+            s[t] = pyo.value(self.model.S[t])
+        
+        w = {}
+        for t in self.model.T:
+            w[t] = pyo.value(self.model.W[t])
+
+        return G_df, s, w, b_data, eb_data, x_data
     
     def _read_data(self, forecast_filepath, demand_filepath, sepr=','):
         """
@@ -182,6 +190,8 @@ class Deterministic(_MG_model):
         model.T = pyo.Set(initialize=[i for i in range(len(forecast_df))])
 
         model.D = pyo.Param(model.T, initialize=demand)
+        model.S = pyo.Param(model.T, initialize=forecast_df['Rt'])
+        model.W = pyo.Param(model.T, initialize=forecast_df['Wt'])
 
         model.P = pyo.Param(initialize=5)
 
@@ -237,13 +247,13 @@ class Deterministic(_MG_model):
         
         def G_rule(model, i, t):
             gen = generators_dict[i]
-            if gen.tec == 'S':
-                return model.G[i,t] == forecast_df['Rt'][t]
-            if gen.tec == 'W':
-                return model.G[i,t] == forecast_df['Wt'][t]
-            if gen.tec == 'H':
-                #A Corregir
-                return model.G[i,t] == gen.p * 9.8 * gen.ht * gen.ef * forecast_df['Qt'][t] * model.x[i,t]
+            # if gen.tec == 'S':
+            #     return model.G[i,t] == forecast_df['Rt'][t]
+            # if gen.tec == 'W':
+            #     return model.G[i,t] == forecast_df['Wt'][t]
+            # if gen.tec == 'H':
+            #     #A Corregir
+            #     return model.G[i,t] == gen.p * 9.8 * gen.ht * gen.ef * forecast_df['Qt'][t] * model.x[i,t]
             if gen.tec == 'D':
                 return 0 <= model.G[i,t] - model.x[i,t]*gen.g_min
             if gen.tec == 'G':
@@ -266,7 +276,7 @@ class Deterministic(_MG_model):
         def Gconstraint_rule(model, t):
             ls = sum(model.G[i,t] for i in model.I if generators_dict[i].tec == 'S' or 
                         generators_dict[i].tec == 'W' or generators_dict[i].tec == 'H' or
-                        generators_dict[i].tec == 'D')
+                        generators_dict[i].tec == 'D') + model.S[t] + model.W[t]
 
             rs = model.EL[t] + model.EB[t] + model.EW[t]
             return ls == rs

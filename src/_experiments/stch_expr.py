@@ -28,13 +28,16 @@ class Report():
 
         self.rep[h] = df
     
-    def make_report_d(self, g, x, b, eb):
+    def make_report_d(self, g, s, w, b, eb, x):
         df = pd.DataFrame()
 
 
         for i in g.keys():
             df[i] = g[i]
         
+        df['s'] = s.values()
+
+        df['w'] = w.values()
 
         df['b'] = b.values()
 
@@ -59,10 +62,14 @@ def run_deterministic(param_filepath):
     model = Deterministic(forecast_filepath, demand_filepath, param_filepath)
     
     model.solve(solver='gurobi')
-    
-    g, x, b, eb = model.dispatch()
 
-    report.make_report_d(g, x, b, eb)
+    # model.model.G.pprint()
+    
+    g, s, w, b, eb, x = model.dispatch()
+
+    report.make_report_d(g, s, w, b, eb, x)
+
+    print('DETERMINISTIC OF: {}'.format(pyo.value(model.model.generation_cost)))
 
     return report.rep
 
@@ -117,8 +124,11 @@ def run_AAED(param_filepath, demand_filepath, solar_filepath, wind_filepath, P, 
             dd = pd.concat([dd, tmp])
             
 
-        
-        
+    # Recalculate the value of the Objective Function according to the final load profile
+
+    of = sum(sum(z for z in pyo.value(model.model.va_op[i])*dd[i]) for i in model.model.I)
+    print('AFFINE OF: {}'.format(of))
+    
 
     return report.rep, dd
 
