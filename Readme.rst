@@ -38,6 +38,14 @@ Go to http://www.pyomo.org for more information.
 
 ::
 
-    python -m microgrids_management -wf "../data/results.csv" -gr 5 -gc 8 -cn "ARX" -s_end "2019-11-05 23:00:00-05:00" -s_start "2019-11-05 00:00:00-05:00" -i_start "2019-10-31 00:00:00-05:00" -sn "gurobi"
+    python __main__.py deterministic -wf /data/expr/det/FORECAST.csv -df /data/expr/det/DEMAND.csv -gu /data/expr/parameters.json
 
 * You need to install a linear solver such as "Gurobi": www.gurobi.com/ (e.g Gurobi, Cplex, SCJP, etc.)
+
+Deterministic model
+******
+
+In order to run the deterministic model, following command can be used:
+::
+
+    python __main__.py deterministic -wf /data/expr/det/FORECAST.csv -df /data/expr/det/DEMAND.csv -gu /data/expr/parameters.json
