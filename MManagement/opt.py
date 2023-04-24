@@ -575,7 +575,7 @@ class AAED(_MG_model):
             eb[t] = pyo.value(self.model.eb[0, t]) + sum(pyo.value(self.model.eb[f, h, t])*epsilon[f, h, t] for f, h in self.model.H)
 
         w = {}
-        for t in zz:
+        for t in self.model.T:
             w[t] = pyo.value(self.model.W_0[t]) + sum(pyo.value(self.model.W[f, h, t])*epsilon[f, h, t] for f, h in self.model.Ps)
 
         s = {}
