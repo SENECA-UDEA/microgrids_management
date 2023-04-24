@@ -1,125 +1,75 @@
-import FuentesClass as FuentesClass
-import opt as opt
 import pyomo.environ as pyo
-from pyomo.core import value
+from pyomo.util.infeasible import log_infeasible_constraints
+import matplotlib.pyplot as plt
+import numpy as np
+from opt import Deterministic, AAED
 
 import pandas as pd
-import string
-import random
-import csv
-import seaborn as sns
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
-plt.rcParams['text.usetex'] = True
-import numpy as np
-
-import json
 import sys
 import os
-import time
 
+class Report():
+    def __init__(self) -> None:
+        self.rep = {}
+        self.aux_stch = None
 
-def read_data(forecast_filepath, demand_filepath, sepr=','):#, filepath_bat):
-
-    #Identify delimiter
-    with open(forecast_filepath, newline='') as forecast:
-        dialect = csv.Sniffer().sniff(forecast.read(1024))
-    forecast_df = pd.read_csv(forecast_filepath, sep=dialect.delimiter, header=0, index_col='t')
-
-    with open(demand_filepath, newline='') as forecast:
-        dialect = csv.Sniffer().sniff(forecast.read(1024))
-    demand = pd.read_csv(demand_filepath, squeeze=True, sep=dialect.delimiter, header=0)['demand'].to_dict()
-    
-    return forecast_df, demand
-
-def create_generators(param_filepath):
-    with open(param_filepath) as parameters:
-        data = json.load(parameters)
-    
-    generators = data['generators']
-    battery = data['battery']
-
-    battery = FuentesClass.Bateria(*battery.values())
-
-    generators_dict = {}
-    for i in generators:
-        if i['tec'] == 'S':
-            obj_aux = FuentesClass.Solar(*i.values())
-        elif i['tec'] == 'W':
-            obj_aux = FuentesClass.Eolica(*i.values())
-        elif i['tec'] == 'H':
-            obj_aux = FuentesClass.Hidraulica(*i.values())
-        elif i['tec'] == 'D':
-            obj_aux = FuentesClass.Diesel(*i.values())
-        elif i['tec'] == 'NA':
-            obj_aux = FuentesClass.Fict(*i.values())
-        # else:
-        #     raise RuntimeError('Generator ({}) with unknow tecnology ({}).'.format(i['id_gen'], i['tec'])
-
-        generators_dict[i['id_gen']] = obj_aux
+    def make_report_s(self, g, s, w, b, eb):
         
-    return generators_dict, battery
+        df = pd.DataFrame()
 
-def create_results(model):
-    #results = {}
-    G_data = {i: [0]*len(model.T) for i in model.calI}
-    for (i,t), v in model.G.items():
-        G_data[i][t] = value(v)
+        for i in g.keys():
+            for t in g[i].keys():
+                df[i] = g[i].values()
+
+        df['s'] = s.values()
+
+        df['w'] = w.values()
+
+        df['b'] = b.values()
+
+        df['eb'] = eb.values()
+
+        self.rep = df.copy()
     
-    G_df = pd.DataFrame(G_data, columns=[*G_data.keys()])
+    def make_report_d(self, g, s, w, b, eb, x):
+        df = pd.DataFrame()
 
-    x_data = {i: [0]*len(model.T) for i in model.I}
-    for (i,t), v in model.x.items():
-        x_data[i][t] = value(v)
+
+        for i in g.keys():
+            df[i] = g[i]
+        
+        df['s'] = s.values()
+
+        df['w'] = w.values()
+
+        df['b'] = b.values()
+
+        df['eb'] = eb.values()
+
+        self.rep = df.copy()
     
-    x_df = pd.DataFrame(x_data, columns=[*x_data.keys()])
+    def export_d(self, path):
 
-    b_data = {i: [0]*len(model.T) for i in model.I}
-    for t, v in model.B.items():
-        b_data[t] = value(v)
-    
-    b_df = pd.DataFrame(b_data, columns=[*b_data.keys()])
-
-    eb_data = [0]*len(model.T)
-    for t in model.T:
-        eb_data[t] = value(model.EB[t])
-    
-    eb_df = pd.DataFrame(eb_data)
-
-    return G_df, x_df, b_df, eb_df
-
-def export_results(model, location, day, x_df, G_df, b_df, execution_time,
-    down_limit, up_limit, l_max, l_min, term_cond):
-    
-    #current_path = os.getcwd()
-    y = False
-    while not(y):
-        folder_name = location+'_'+day+'_'+str(random.choice(string.ascii_letters))+str(random.randint(0, 10))
-        new_path = '../results/'+folder_name
+        folder_name = path
+        new_path = os.getcwd()+'/'+folder_name
         if not os.path.exists(new_path):
             os.makedirs(new_path)
-            y = True
-    x_df.to_csv(new_path+'/x.csv')
-    G_df.to_csv(new_path+'/G.csv')
-    b_df.to_csv(new_path+'/b.csv')
+        self.rep.to_csv(new_path+'/{}.csv'.format(path))
+        print('Your output file is located in {}'.format(new_path))
+        
 
-    with open('../results/results.csv', 'a') as file:
-        writer = csv.writer(file)
-        writer.writerow([folder_name, down_limit, up_limit, l_min, l_max, 
-            execution_time, pyo.value(model.generation_cost), term_cond])
+        
+
     
-
-    return folder_name
-
-def visualize_results(g_df, x_df, d_df, eb_df, label=None, name=None):
-    data_dem = list(d_df.values())
+def visualize_results(g_df, x_df=None, d_df=None, label=None, name=None):
+    #data_dem = list(d_df.values())
     
-    data_s = g_df['Solar1'].to_numpy()
-    data_w = g_df['Wind1'].to_numpy()
+    data_s = g_df['s'].to_numpy()
+    data_w = g_df['w'].to_numpy()
     data_d = g_df['Diesel1'].to_numpy()
     data_b = g_df['Battery1'].to_numpy()
     data_f = g_df['Fict'].to_numpy()
-    data_eb = eb_df[0].to_numpy() * -1
+    data_eb = g_df['eb'].to_numpy() * -1
     t = np.arange(len(data_s))
     
     
@@ -135,7 +85,7 @@ def visualize_results(g_df, x_df, d_df, eb_df, label=None, name=None):
     plt.bar(t,data_b,color="royalblue",bottom=data_w+data_s+data_d,label="Battery")
     plt.bar(t,data_f,color="gray",bottom=data_w+data_s+data_d+data_b,label="Unattended demand")
     
-    plt.plot(data_dem, color='red', marker='o', linestyle='dashed', linewidth=3, markersize=4, label="Demand")
+    #plt.plot(data_dem, color='red', marker='o', linestyle='dashed', linewidth=3, markersize=4, label="Demand")
     #plt.bar(t,data_eb,color="black",bottom=data_s+data_w+data_d+data_b+data_f,label="Charge")
 
     plt.xlabel("Time (hour)", fontsize=15)
@@ -153,6 +103,113 @@ def visualize_results(g_df, x_df, d_df, eb_df, label=None, name=None):
     plt.show()
     
     return None
+        
+
+def run_deterministic(forecast_filepath, demand_filepath, param_filepath, 
+                      down_limit=0.2, up_limit=0.95, l_min=4, l_max=4, solver_name='gurobi', model_name='Deterministic'):
+    """
+    This function runs the entire process to manage a microgrid usig Deterministic Optimization.
+    In this, a 24 hours forecast is usted in order to optimize the Economic Dispatch variables.
+    
+    Args:
+            forecast_filepath (str) weather forecast .csv path.
+            demand_filepath (str) demand forecast .csv path.
+            param_filepath (str) generators and battery .json path.
+            down_limit (float) minimun percentage of battery level to enter into deep-discharge. default: 0.2
+            up_limit (float) maximun percentage of battery level to enter into  overcharge. default: 0.95
+            l_min (int) maximin number of deep-discharge periods allowed into the optimization horizon. default: 4
+            l_max (int) maximin number of overcharge periods allowed into the optimization horizon. default: 4
+    """
+    
+    report = Report()
+    # exp_path = '../../data/expr/det/'
+
+    # if not forecast_filepath:
+    #     forecast_filepath = exp_path+'FORECAST.csv'
+    # if not demand_filepath:
+    #     demand_filepath = exp_path+'DEMAND.csv'
+    
+    # Create the Pyomo model
+    model = Deterministic(forecast_filepath, demand_filepath, param_filepath,
+                          down_limit, up_limit, l_min, l_max, model_name)
+    
+    model.solve(solver=solver_name)
+
+    # model.model.G.pprint()
+    
+    g, s, w, b, eb, x = model.dispatch()
+
+    report.make_report_d(g, s, w, b, eb, x)
+
+    # print('Model {} - Objective Function: {}'.format(model.name, pyo.value(model.model.generation_cost)))
+
+    # d = {t: pyo.value(v) for t, v in model.model.D.items()}
+    
+    # visualize_results(report.rep, label=model_name)
+
+    return report.rep
+
+
+def run_AAED(solar_filepath, wind_filepath, demand_filepath, param_filepath, actuals_filepath, weight, solver_name, model_name):
+    """
+    This function runs the entire process to manage a microgrid usig Affine Aritmetic Optimization.
+    In this, a 24 hours forecast is usted in order to generate the AA coefficients for ED variables.
+    After that, noise symbols are re-calculated each 4 hours in order to generate real dispatch
+    values.
+    This process needs 4 (24h/6h) "most recent information" forecast to re-calculate 
+    noise symbols.
+    """
+    # exp_path = '../../data/expr/stch/'
+    model = AAED(param_filepath, demand_filepath, solar_filepath, wind_filepath, weight, model_name)
+
+    model.solve(solver=solver_name)
+
+    g, s, w, b, eb = model.dispatch(actuals_filepath)
+
+    report = Report()
+
+    # for h in range(0, 24, 6):
+    #     demand_forecast = exp_path+'forecast/{}_demand.csv'.format(h-6)
+    #     solar_forecast = exp_path+'forecast/{}_solar.csv'.format(h-6)
+    #     wind_forecast = exp_path+'forecast/{}_wind.csv'.format(h-6)
+    #     print(h)
+        
+    #     model = AAED(param_filepath, demand_forecast, solar_forecast, wind_forecast, P, weight)
+        
+        
+        
+    #     model.solve(solver='gurobi')
+
+        
+        
+
+    #     g, s, w, b, eb = model.dispatch(exp_path+'actuals/{}.csv'.format(h), h) # Return g, s, w, b, eb as dicts
+
+        
+
+    report.make_report_s(g, s, w, b, eb)
+    
+    # dd = pd.DataFrame()
+
+    # for h in range(0, 24, 6):
+    #     if h == 0:
+    #         dd = report.rep[0].loc[:5].copy()
+    #     else:
+    #         tmp = report.rep[h].loc[:5].copy()
+    #         #print(tmp)
+    #         dd = pd.concat([dd, tmp])
+            
+
+    # Recalculate the value of the Objective Function according to the final load profile
+
+    # of = sum(sum(z for z in pyo.value(model.model.va_op[i])*dd[i]) for i in model.model.I)
+    # print('AFFINE OF: {}'.format(of))
+    
+    # d = {t: pyo.value(v) for t, v in model.model.D_0.items()}
+
+    # visualize_results(dd, label='AAED')
+
+    return report.rep
 
 
 if __name__ == "__main__":
