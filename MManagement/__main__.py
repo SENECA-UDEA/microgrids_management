@@ -1,6 +1,6 @@
-import src.FuentesClass as FuentesClass
-import src.opt as opt
-import src.GestionMR as GestionMR
+import FuentesClass as FuentesClass
+import opt as opt
+import GestionMR as GestionMR
 import pandas as pd
 import json
 import sys

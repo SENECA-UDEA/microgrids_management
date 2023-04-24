@@ -47,9 +47,9 @@ For more information read `this paper <https://doi.org/10.3390/app12083980>`_.
 
 .. code-block:: shell
 
-    Usage: __main__.py d [OPTIONS]
+    Usage: MManagement d [OPTIONS]
 
-        Runs the deterministic module of microgrid_management package.
+        Run the deterministic module of microgrid_management package.
 
     Options:
         -wf, --weather_forecast TEXT  Path of weather forecast data .csv file
@@ -71,10 +71,10 @@ For more information read `this paper <https://doi.org/10.3390/app12083980>`_.
         -bfn, --base_file_name TEXT   Base name for .csv output file
         --help                        Show this message and exit.
 
-In order to run the deterministic model, following command can be used:
+In order to run an small example with the deterministic model, following command can be used:
 ::
 
-    python __main__.py d -wf /data/expr/det/FORECAST.csv -df /data/expr/det/DEMAND.csv -gu /data/expr/parameters.json
+    python MManagement d -wf data/expr/det/FORECAST.csv -df data/expr/det/DEMAND.csv -gu data/expr/parameters.json
 
 Affine Arithmetic Economic Dispatch model
 --------
@@ -85,9 +85,9 @@ This model creates and optimizes a linear programming model based on forecasted 
 
 .. code-block:: shell
 
-    Usage: __main__.py s [OPTIONS]
+    Usage: MManagement s [OPTIONS]
 
-        Runs the stochastic module of microgrid_management package.
+        Run the stochastic module of microgrid_management package.
 
     Options:
         -sf, --solar_forecast TEXT    Path of solar generation forecast data .csv
@@ -108,7 +108,7 @@ This model creates and optimizes a linear programming model based on forecasted 
         --help                        Show this message and exit.
 
 
-In order to run the Affine Arithmetic Economic Dispatch model, following command can be used:
+In order to run an small example with the Affine Arithmetic Economic Dispatch model, following command can be used:
 ::
 
-    python __main__.py deterministic -wf /data/expr/det/FORECAST.csv -df /data/expr/det/DEMAND.csv -gu /data/expr/parameters.json
+    python MManagement s -sf data/expr/stch/forecast/-6_solar.csv -wf data/expr/stch/forecast/-6_wind.csv -df data/expr/stch/forecast/-6_demand.csv -af -df data/expr/stch/actuals/0.csv -gu data/expr/parameters.json
