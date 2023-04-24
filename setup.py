@@ -13,15 +13,15 @@ if sys.version[0] == '2':
     sys.exit(1)
 
 setuptools.setup(
-    name="Microgrid_Management",
+    name="MManagement",
     version="1",
     author="Mateo Espitia-Ibarra",
-    author_email="mateo.espitia@udea.edu.co",
+    author_email="mespitiaibarra@gmail.com",
     description="Optimization tool for isolated microgrid management",
     long_description=long_description,
     long_description_content_type="text/x-rst",
     url="https://github.com/SENECA-UDEA/microgrids_management",
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(install_requires),
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
