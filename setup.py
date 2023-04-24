@@ -14,7 +14,7 @@ if sys.version[0] == '2':
 
 setuptools.setup(
     name="MManagement",
-    version="1",
+    version="2",
     author="Mateo Espitia-Ibarra",
     author_email="mespitiaibarra@gmail.com",
     description="Optimization tool for isolated microgrid management",
