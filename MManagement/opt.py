@@ -488,12 +488,8 @@ class AAED(_MG_model):
         results = self._solve_model(solver)
         return results
     
-    def _epsilons(self, actuals_path, temp):
+    def _epsilons(self, actuals_path):
         
-        try:
-            aux = range(min(temp, 6))
-        except:
-            aux = []
         act = pd.read_csv(actuals_path, sep=';')
 
         b = act.columns
@@ -503,14 +499,11 @@ class AAED(_MG_model):
 
         for i in b:
             for j in c:
-                actuals[i,j+min(6, temp)] = act[i][j] #Tener cuidado con Temp cuando sea "None"
+                actuals[i,j] = act[i][j] #Tener cuidado con Temp cuando sea "None"
         
-        
-        
-
         epsilon = {}
 
-        zz = self.model.T - aux
+        # zz = self.model.T - aux
         # if temp == 12:
         #     print(actuals)
         #     print(aux)
@@ -519,7 +512,7 @@ class AAED(_MG_model):
             
 
         for f, h in self.model.H:
-            for t in zz: #self.model.T - aux:
+            for t in self.model.T: #self.model.T - aux:
                 if f == 'D':
                     aux = (actuals[f, t] - pyo.value(self.model.D_0[t]))/ pyo.value(self.model.D[f, h, t])
                     if aux < -1:
@@ -550,16 +543,16 @@ class AAED(_MG_model):
                         epsilon[f, h, t] = aux
         return epsilon
 
-    def dispatch(self, actuals_path, temp=None):
+    def dispatch(self, actuals_path):
         
-        epsilon = self._epsilons(actuals_path, temp)
+        epsilon = self._epsilons(actuals_path)
 
-        try:
-            aux = range(min(temp, 6)) #Cuidado con el 6
-        except:
-            aux = []
+        # try:
+        #     aux = range(min(temp, 6)) #Cuidado con el 6
+        # except:
+        #     aux = []
         
-        zz = self.model.T - aux
+        # zz = self.model.T - aux
         # if temp == 18:
         #     print('-------------EPSILONS {}'.format(temp))
         #     print(epsilon)
@@ -569,16 +562,16 @@ class AAED(_MG_model):
         g = {}
         for i in self.model.calI:
             aux = {}
-            for t in zz:
+            for t in self.model.T:
                 aux[t] = pyo.value(self.model.g[i, 0, t]) + sum(pyo.value(self.model.g[i, f, h, t])*epsilon[f, h, t] for f, h in self.model.H)
             g[i] = aux
 
         b = {}
-        for t in zz:
+        for t in self.model.T:
             b[t] = pyo.value(self.model.b[0, t]) + sum(pyo.value(self.model.b[f, h, t])*epsilon[f, h, t] for f, h in self.model.H)
         
         eb = {}
-        for t in zz:
+        for t in self.model.T:
             eb[t] = pyo.value(self.model.eb[0, t]) + sum(pyo.value(self.model.eb[f, h, t])*epsilon[f, h, t] for f, h in self.model.H)
 
         w = {}
@@ -586,7 +579,7 @@ class AAED(_MG_model):
             w[t] = pyo.value(self.model.W_0[t]) + sum(pyo.value(self.model.W[f, h, t])*epsilon[f, h, t] for f, h in self.model.Ps)
 
         s = {}
-        for t in zz:
+        for t in self.model.T:
             s[t] = pyo.value(self.model.S_0[t]) + sum(pyo.value(self.model.S[f, h, t])*epsilon[f, h, t] for f, h in self.model.Pw)
         
         return g, s, w, b, eb

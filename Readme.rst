@@ -111,4 +111,4 @@ This model creates and optimizes a linear programming model based on forecasted 
 In order to run an small example with the Affine Arithmetic Economic Dispatch model, following command can be used:
 ::
 
-    python MManagement s -sf data/expr/stch/forecast/-6_solar.csv -wf data/expr/stch/forecast/-6_wind.csv -df data/expr/stch/forecast/-6_demand.csv -af -df data/expr/stch/actuals/0.csv -gu data/expr/parameters.json
+    python MManagement s -sf data/expr/stch/forecast/-6_solar.csv -wf data/expr/stch/forecast/-6_wind.csv -df data/expr/stch/forecast/-6_demand.csv -af data/expr/stch/actuals/0.csv -gu data/expr/parameters.json
