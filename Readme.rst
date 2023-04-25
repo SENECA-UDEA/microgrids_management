@@ -76,18 +76,6 @@ In order to run an small example with the deterministic model, following command
 
     python MManagement d -wf data/expr/det/FORECAST.csv -df data/expr/det/DEMAND.csv -gu data/expr/parameters.json
 
-+------------------+-------------------+-------------------+-------------------+
-|       mean       |         1         |        ...        |         H         |
-+==================+===================+===================+===================+
-|       19089.5    |    286.7524061    |        ...        |    283.0492167    |
-+------------------+-------------------+-------------------+-------------------+
-|       ...        |        ...        |        ...        |        ...        |
-+------------------+-------------------+-------------------+-------------------+
-|    $mean_{T}$    |$noiseSymbol^H_{T}$|        ...        |$noiseSymbol^H_{T}$|
-+------------------+-------------------+-------------------+-------------------+
-
-
-
 Affine Arithmetic Economic Dispatch model
 --------
 
@@ -119,6 +107,22 @@ This model creates and optimizes a linear programming model based on forecasted 
         -bfn, --base_file_name TEXT   Base name for .csv output file
         --help                        Show this message and exit.
 
+Input data
+***********
+The input data enters to the model throught *solar_forecast*, *wind_forecast* and *demand_forecast* with the following format:
+
++------------------+-------------------+-------------------+-------------------+
+|       mean       |         1         |        ...        |         H         |
++==================+===================+===================+===================+
+|       19089.5    |    286.7524061    |        ...        |    283.0492167    |
++------------------+-------------------+-------------------+-------------------+
+|       ...        |        ...        |        ...        |        ...        |
++------------------+-------------------+-------------------+-------------------+
+|                  |                   |                   |                   |
+|     $mean_{T}$   |    $\chi^1_{T}$   |        ...        |    $\chi^H_{T}$   |
++------------------+-------------------+-------------------+-------------------+
+
+$\chi^h_{t}$ represents the $h$ partial deviation at time step $t$ for each of the parameters mentioned before.
 
 In order to run an small example with the Affine Arithmetic Economic Dispatch model, following command can be used:
 ::
