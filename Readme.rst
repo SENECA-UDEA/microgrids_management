@@ -119,7 +119,7 @@ The input data enters to the model throught *solar_forecast*, *wind_forecast* an
 |       ...        |        ...        |        ...        |        ...        |
 +------------------+-------------------+-------------------+-------------------+
 |                  |                   |                   |                   |
-|     $mean_{T}$   |:math:`\\chi^1_{T}`|        ...        |:math:`\\chi^H_{T}`|
+|     $mean_{T}$   |   $\\chi^1_{T}$   |        ...        |   $\\chi^H_{T}$   |
 +------------------+-------------------+-------------------+-------------------+
 
 $\chi^h_{t}$ represents the $h$ partial deviation at time step $t$ for each of the parameters mentioned before.
