@@ -388,7 +388,8 @@ class Deterministic(_MG_model):
         return model
 
 class AAED(_MG_model):
-    def __init__(self, param_filepath=str, demand_filepath=str, solar_filepath=str, wind_filepath=str, weight=float, model_name='Affine Arithmetic'):
+    def __init__(self, param_filepath, demand_filepath, solar_filepath, wind_filepath, P, weight, model_name='Affine Arithmetic'):
+        #def __init__(self, param_filepath, D, S, W, P, T, weight, model_name='Affine Arithmetic'):
         """
         A class to create Microgrid Management model using Affine Arithmetic Economic Dispatch approach.
         
@@ -398,8 +399,8 @@ class AAED(_MG_model):
             solar_filepath (str) Solar generation forecast data and deviations .csv filepath.
             wind_filepath (str) Wind generation forecast data and deviations .csv filepath.
             P (int) Number of noise symbols for Demand, Solar and Wind generation.
+            T (int) Number of time periods for the optimization process.
             weight (float) Weight for mean case objective function.
-            model_name (str) Pyomo model's name.
             
         Attributes:
             model_name
@@ -407,17 +408,15 @@ class AAED(_MG_model):
 
 
         # generators_dict, battery = self._create_generators(param_filepath)
-        D, S, W, P = self._read_data(demand_filepath, solar_filepath, wind_filepath)
+        D, S, W = self._read_data(demand_filepath, solar_filepath, wind_filepath)
         generators_dict, battery = self._create_generators(param_filepath)
-        self.model = self._make_model(generators_dict, battery, D, S, W, P, weight, model_name)
+        self.model = self._make_model(generators_dict, battery, D, S, W, P, weight)
         super().__init__(model_name)
     
     def _read_data(self, demand_filepath, solar_filepath, wind_filepath):
         D = pd.read_csv(demand_filepath, sep=';')
         S = pd.read_csv(solar_filepath, sep=';')
         W = pd.read_csv(wind_filepath, sep=';')
-
-        p = {'D': len(D.columns), 'S': len(S.columns), 'W': len(W.columns)}
 
         d = {}
         s = {}
@@ -450,7 +449,7 @@ class AAED(_MG_model):
                 aux_w[('W', i), t] = W[str(i)][t]
         w['dev'] = aux_w
 
-        return d, s, w, p
+        return d, s, w
     
     def _create_generators(self, param_filepath):
         """
@@ -591,8 +590,8 @@ class AAED(_MG_model):
         
         return g, s, w, b, eb
 
-    def _make_model(self, generators_dict, battery, D, S, W, P, weight, model_name):
-        model = pyo.ConcreteModel(name=model_name)
+    def _make_model(self, generators_dict, battery, D, S, W, P, weight):
+        model = pyo.ConcreteModel(name="Stochastic Microgrid Management")
 
         T = len(D['mean'])
         
