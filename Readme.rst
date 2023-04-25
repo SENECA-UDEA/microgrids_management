@@ -110,35 +110,37 @@ This model creates and optimizes a linear programming model based on forecasted 
 Input data
 ***********
 Forecasted input data enters to the package throught *--solar_forecast*, *--wind_forecast* and *--demand_forecast* with the following format in *.csv* files:
-
-+------------------+-------------------+-------------------+-------------------+
-|       mean       |         1         |        ...        |         H         |
-+==================+===================+===================+===================+
-|       19089.5    |    286.7524061    |        ...        |    283.0492167    |
-+------------------+-------------------+-------------------+-------------------+
-|       ...        |        ...        |        ...        |        ...        |
-+------------------+-------------------+-------------------+-------------------+
-|                  |                   |                   |                   |
-|     $mean_{T}$   |   $\\chi^1_{T}$   |        ...        |   $\\chi^H_{T}$   |
-+------------------+-------------------+-------------------+-------------------+
+.. centered::
+    +------------------+-------------------+-------------------+-------------------+
+    |       mean       |         1         |        ...        |         H         |
+    +==================+===================+===================+===================+
+    |       19089.5    |    286.7524061    |        ...        |    283.0492167    |
+    +------------------+-------------------+-------------------+-------------------+
+    |       ...        |        ...        |        ...        |        ...        |
+    +------------------+-------------------+-------------------+-------------------+
+    |                  |                   |                   |                   |
+    |     $mean_{T}$   |   $\\chi^1_{T}$   |        ...        |   $\\chi^H_{T}$   |
+    +------------------+-------------------+-------------------+-------------------+
 
 Where $\\chi^h_{t}$ represents the **$h$** partial deviation at time step **$t$** for each of the parameters mentioned before.
 
 In order to generate dispatch values from the model, most recent data is needed. This information enters to the package throught *--actuals_filepath* in a single *.csv* file with format:
-
-+------------+------------+------------+
-|      D     |      S     |      W     |
-+============+============+============+
-| 19612.2    |      0     | 4518.912   |
-+------------+------------+------------+
-|     ...    |     ...    |     ...    |
-+------------+------------+------------+
-| $D_{T}$    | $S_{T}$    | $W_{T}$    |
-+------------+------------+------------+
+.. centered::
+    +------------+------------+------------+
+    |      D     |      S     |      W     |
+    +============+============+============+
+    | 19612.2    |      0     | 4518.912   |
+    +------------+------------+------------+
+    |     ...    |     ...    |     ...    |
+    +------------+------------+------------+
+    | $D_{T}$    | $S_{T}$    | $W_{T}$    |
+    +------------+------------+------------+
 
 Where $D_{t}$, $S_{t}$ and $W_{t}$ represent the electricity demand, solar-based generation and wind-based generation at time step **$t$**, respectively.
 
+Example
+***********
+
 In order to run an small example with the Affine Arithmetic Economic Dispatch model, following command can be used:
 ::
-
     python MManagement s -sf data/expr/stch/forecast/-6_solar.csv -wf data/expr/stch/forecast/-6_wind.csv -df data/expr/stch/forecast/-6_demand.csv -af data/expr/stch/actuals/0.csv -gu data/expr/parameters.json
