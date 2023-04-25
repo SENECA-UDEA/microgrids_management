@@ -109,7 +109,7 @@ This model creates and optimizes a linear programming model based on forecasted 
 
 Input data
 ***********
-The input data enters to the model throught *solar_forecast*, *wind_forecast* and *demand_forecast* with the following format:
+Forecasted input data enters to the package throught *--solar_forecast*, *--wind_forecast* and *--demand_forecast* with the following format in *.csv* files:
 
 +------------------+-------------------+-------------------+-------------------+
 |       mean       |         1         |        ...        |         H         |
@@ -122,7 +122,21 @@ The input data enters to the model throught *solar_forecast*, *wind_forecast* an
 |     $mean_{T}$   |   $\\chi^1_{T}$   |        ...        |   $\\chi^H_{T}$   |
 +------------------+-------------------+-------------------+-------------------+
 
-$\chi^h_{t}$ represents the $h$ partial deviation at time step $t$ for each of the parameters mentioned before.
+Where $\\chi^h_{t}$ represents the **$h$** partial deviation at time step **$t$** for each of the parameters mentioned before.
+
+In order to generate dispatch values from the model, most recent data is needed. This information enters to the package throught *--actuals_filepath* in a single *.csv* file with format:
+
++------------+------------+------------+
+|      D     |      S     |      W     |
++============+============+============+
+| 19612.2    |      0     | 4518.912   |
++------------+------------+------------+
+|     ...    |     ...    |     ...    |
++------------+------------+------------+
+| $D_{T}$    | $S_{T}$    | $W_{T}$    |
++------------+------------+------------+
+
+Where $D_{t}$, $S_{t}$ and $W_{t}$ represent the electricity demand, solar-based generation and wind-based generation at time step **$t$**, respectively.
 
 In order to run an small example with the Affine Arithmetic Economic Dispatch model, following command can be used:
 ::
